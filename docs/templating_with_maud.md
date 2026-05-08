@@ -98,3 +98,20 @@ let app = Router::new()
 
 > [!TIP]
 > Maud usa una sintaxis parecida a CSS para clases y IDs: `.mi-clase` para class y `#mi-id` para id. ¡Es muy intuitivo!
+
+## ⚠️ Nota importante sobre Atributos HTML
+
+Maud no utiliza la sintaxis estándar de HTML (`atrib="valor"`) dentro de sus bloques. Para definir atributos (como `name`, `charset`, `rel`, `href`), debes escribir el nombre del atributo seguido del valor entre comillas, sin usar el signo igual `=`.
+
+**Correcto:**
+
+```rust
+meta name="description" content="Mi descripción aquí";
+meta charset="UTF-8";
+link rel="stylesheet" href="/assets/style.css";
+```
+
+**Evita:**
+
+- No uses el signo `=` entre el nombre del atributo y el valor.
+- No añadas punto y coma `;` al final de etiquetas que contienen otros elementos (`{ ... }`), úsalo solo al final de etiquetas "autocerradas" (como `meta` o `link`).
