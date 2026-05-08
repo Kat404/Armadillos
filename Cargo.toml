@@ -1,0 +1,25 @@
+[package]
+name = "Armadillos"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+# El motor: Servidor web asíncrono y enrutamiento
+axum = "0.8.9"
+
+# El combustible: Runtime para manejar tareas asíncronas
+tokio = { version = "1.52.2", features = ["full"] }
+
+# La interfaz: HTML escrito como código Rust
+# La feature "axum" permite que Maud responda directamente al cliente
+maud = { version = "0.27.0", features = ["axum"] }
+
+# Los servicios: Manejo de archivos estáticos (CSS/JS) y logs
+tower-http = { version = "0.6.10", features = ["fs", "trace"] }
+
+# Los datos: Serialización básica
+serde = { version = "1.0.228", features = ["derive"] }
+
+# El observador: Para ver qué pasa en tu terminal (Logs)
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
