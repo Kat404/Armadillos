@@ -1,7 +1,9 @@
+mod components; // Declaramos módulo de componentes/
 mod layouts; // Declaramos módulo raíz de los layouts/
 mod pages; // Declaramos módulo raíz de las pages/
 use axum::{Router, routing::get};
-use pages::Main::pagina_main; // Importamos página principal
+use pages::About::pagina_about; // Importamos la página Acerca de
+use pages::Main::pagina_main; // Importamos página principal (index)
 use tower_http::services::ServeDir;
 
 use axum::http::header;
@@ -30,6 +32,7 @@ async fn main() {
     // Construir la app con una sola ruta simple y logs de peticiones
     let app = Router::new()
         .route("/", get(pagina_main))
+        .route("/about", get(pagina_about))
         .nest_service("/assets", ServeDir::new("assets"));
 
     // Correr nuestra app, escuchando globalmente en el puerto 3000

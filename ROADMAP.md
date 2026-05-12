@@ -1,32 +1,44 @@
-# ROADMAP.md
+# ROADMAP.md (V2: Hardened Edition)
 
-## Fase 1: Fundamentos y Arquitectura
+## Fase 1: Cimientos y Seguridad Estática
 
-- [x] Estructura básica de directorios y módulos (`assets/views`, `assets/layouts`).
-- [x] Configuración de `Cargo.toml` con dependencias necesarias.
-- [x] Implementación de sistema de módulos (`mod.rs` en cascada).
-- [ ] Auditoría de seguridad inicial (revisión de dependencias).
+_Objetivo: Establecer un entorno de desarrollo donde sea "difícil" cometer errores._
 
-## Fase 2: Integración Web (Axum + Maud)
+- [x] **Arquitectura Base:** Estructura de módulos y configuración de `Cargo.toml`.
+- [ ] **Enforcement de Estilo y Seguridad:** Configurar `clippy` con niveles estrictos (`deny(warnings)`) y `cargo-audit` en el flujo de trabajo para detectar vulnerabilidades en dependencias.
+- [ ] **Gestión de Secretos:** Implementar un sistema para que las llaves de la DB y sales de encriptación nunca toquen el código (uso de variables de entorno o `Secrecy` crate para evitar fugas en logs).
+- [x] **Licenciamiento:** Definir formalmente la licencia **AGPLv3** en el repositorio para proteger el código en entornos SaaS.
 
-- [x] Implementación del patrón `IntoResponse` (Newtype).
-- [x] Conexión entre Router, Handlers y Layouts.
-- [ ] Optimización de assets estáticos (CSS/JS) mediante `tower-http`.
+## Fase 2: El Corazón del Dominio (Type-Safety Militar)
 
-## Fase 3: Componentización y Modelado de Datos
+_Objetivo: Usar el sistema de tipos de Rust para que la lógica de negocio sea "imposible" de romper._
 
-- [ ] Creación de `src/assets/components/` (Componentes reutilizables).
-- [ ] Definición de modelos de dominio (Structs para Soldados, Rangos, Inventario).
-- [ ] Implementación de `serde` para serialización de datos.
+- [ ] **Modelado de Jerarquías:** Implementar la jerarquía de mando usando _State Machines_ con Enums. (Ej: Un `Soldado` solo puede transicionar a `Cabo` mediante un evento firmado).
+- [ ] **Sistema de Permisos (ABAC):** Diseñar los Structs de `User` y `Context` para permitir Control de Acceso Basado en Atributos.
+- [ ] **Validación en Compilación:** Asegurar que todos los modelos de `SQLx` tengan validación de tipos estricta para evitar datos corruptos en el inventario.
 
-## Fase 4: Persistencia y CRUD Seguro
+## Fase 3: Interfaz de Usuario Hypermedia (Maud + HTMX)
 
-- [ ] Integración de `SQLx` con `SQLite` (fase de desarrollo).
-- [ ] Definición de políticas de acceso (RBAC) a nivel de modelo.
-- [ ] Implementación de validaciones en los formularios de entrada.
+_Objetivo: Una UI rápida y privada sin el "overhead" de JavaScript._
 
-## Fase 5: Refuerzo y Escalabilidad
+- [x] **Pattern IntoResponse:** Newtype para manejo de respuestas limpias.
+- [ ] **Componentización Crítica:** Crear `src/views/components/` para elementos de UI que requieran validación visual (ej. indicadores de nivel de acceso).
+- [ ] **Seguridad en la Capa de Transporte:** Implementar protecciones CSRF mediante middlewares de Axum/Tower-HTTP, vital ya que HTMX usa peticiones AJAX.
 
-- [ ] Migración de `SQLite` a `PostgreSQL`.
-- [ ] Auditoría de seguridad profunda (OWASP para APIs).
-- [ ] Implementación de sistema de logs auditables (quién ve qué).
+## Fase 4: Persistencia y Cifrado en Reposo
+
+_Objetivo: Blindar la base de datos contra accesos físicos no autorizados._
+
+- [ ] **Estrategia de Base de Datos:** Migración controlada de SQLite a PostgreSQL usando contenedores para paridad de entornos.
+- [ ] **Application-Level Encryption (ALE):** Implementar cifrado para campos sensibles (Nombres de oficiales, ubicaciones de armamento) antes de que lleguen a la DB.
+- [ ] **Backups Cifrados:** Scripting (posiblemente en Nushell) para automatizar respaldos hacia almacenamiento local o remoto usando encriptación de llave pública.
+
+## Fase 5: Auditabilidad y "Non-Repudiation"
+
+_Objetivo: Que cada click sea rastreable y legalmente vinculante._
+
+- [ ] **Logs Estructurados (Tracing):** Configurar `tracing-subscriber` para generar logs en formato JSON que incluyan ID de usuario y nivel de mando.
+- [ ] **Integridad de Logs:** Investigar e implementar un sistema de "Hashing" de logs para detectar si alguien (incluso un admin de sistema) ha alterado los registros de acceso.
+- [ ] **Hardening de Producción:** Configuración de cabeceras de seguridad (HSTS, CSP) y despliegue sobre una base de Arch Linux minimalista o contenedores Alpine.
+
+---
