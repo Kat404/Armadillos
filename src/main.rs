@@ -33,7 +33,7 @@ async fn main() {
     let app = Router::new()
         .route("/", get(pagina_main))
         .route("/about", get(pagina_about))
-        .nest_service("/assets", ServeDir::new("assets"));
+        .nest_service("/assets", ServeDir::new("src/assets"));
 
     // Correr nuestra app, escuchando globalmente en el puerto 3000
     let addr = "0.0.0.0:3000";

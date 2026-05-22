@@ -55,6 +55,22 @@ pub async fn pagina_about() -> Markup {
                         de las contraseñas e información sensible"
                     }
                 }
+                details {
+                    summary {
+                        "Minimalismo Open Source"
+                    }
+                    p {
+                        "En el mundo no siempre se puede confiar en las grandes empresas, tenemos una confianza
+                        inconsciente hacia las Big Tech (Google, Microsoft, Apple, etc) en la cual les confiamos nuestros
+                        datos, perfiles, gustos y toda información relevante de nosotros."
+                        br;
+                        "Armadillos no busca que confíes solo por tener una buena arquitectura o decirte cosas bonitas.
+                        Busca que puedas y "
+                        strong { "debas" }
+                        " auditar el código, buscar errores, fallos, vulnerabilidades y atribuyas esos cambios para
+                        mejorar el proyecto beneficiando a todos."
+                    }
+                }
             }
         },
     )
