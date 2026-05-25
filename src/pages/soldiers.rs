@@ -48,11 +48,11 @@ fn render_filas_soldados(soldados: &[Soldado]) -> Markup {
                 td { (s.nombre) }
                 td { (s.rango) }
                 td {
-                    span class = {
-                        "badge "
-                        @if s.estado == "Activo" { "success" }
-                        @else if s.estado == "Licencia" { "warning" }
-                        @else { "secondary" }
+                    span class={
+                        "chip "
+                        @if s.estado == "Activo" { "primary-container" }
+                        @else if s.estado == "Licencia" { "tertiary-container" }
+                        @else { "error-container" }
                     } {
                         (s.estado)
                     }
@@ -74,62 +74,71 @@ pub async fn pagina_soldiers(State(state): State<AppState>) -> Markup {
     layout(
         &ctx,
         html! {
-            h2 {
+            h4 class="medium-margin" {
                 "Panel de Control de Soldados"
             }
             div class="grid" {
-                // Columna Izquierda
-                div {
-                    h3 {
-                        "Incorporar Soldados"
-                    }
-                    form hx-post="/soldiers" hx-target="#tabla-soldados" hx-swap="innerHTML" {
-                        label for="nombre" {
-                            "Nombre Completo"
-                            input type="text" id="nombre" name="nombre" placeholder="Ej: Juan Carlos Rodríguez" required;
+                // Columna Izquierda - Formulario (12/12 en móvil, 4/12 en tablet/escritorio)
+                div class="s12 m4" {
+                    article class="border round medium-padding" {
+                        h5 class="medium-margin" {
+                            "Incorporar Soldado"
                         }
-
-                        label for="rango" {
-                            "Rango"
-                            select id="rango" name="rango" required {
-                                option value="Soldado" { "Soldado" }
-                                option value="Cabo" { "Cabo" }
-                                option value="Sargento" { "Sargento" }
-                                option value="Teniente" { "Teniente" }
-                                option value="Capitán" { "Capitán" }
+                        form hx-post="/soldiers" hx-target="#tabla-soldados" hx-swap="innerHTML" {
+                            div class="field label border" {
+                                input type="text" id="nombre" name="nombre" placeholder=" " required;
+                                label for="nombre" { "Nombre Completo" }
                             }
-                        }
 
-                        label for="estado" {
-                            "Estado en Servicio"
-                            select id="estado" name="estado" required {
-                                option value="Activo" { "Activo" }
-                                option value="Licencia" { "Licencia" }
-                                option value="Retirado" { "Retirado" }
+                            div class="field label border" {
+                                select id="rango" name="rango" required {
+                                    option value="Soldado" { "Soldado" }
+                                    option value="Cabo" { "Cabo" }
+                                    option value="Sargento" { "Sargento" }
+                                    option value="Teniente" { "Teniente" }
+                                    option value="Capitán" { "Capitán" }
+                                }
+                                label for="rango" { "Rango" }
                             }
-                        }
 
-                        button type="submit" {
-                            "Dar de Alta"
+                            div class="field label border" {
+                                select id="estado" name="estado" required {
+                                    option value="Activo" { "Activo" }
+                                    option value="Licencia" { "Licencia" }
+                                    option value="Retirado" { "Retirado" }
+                                }
+                                label for="estado" { "Estado en Servicio" }
+                            }
+
+                            div class="space" {}
+
+                            button type="submit" class="primary round responsive" {
+                                i { "add" }
+                                span { "Dar de Alta" }
+                            }
                         }
                     }
                 }
-                // Columna Derecha
-                div {
-                    h3 {
-                        "Personal Enlistado"
-                    }
-                    table {
-                        thead {
-                            tr {
-                                th { "ID" }
-                                th { "Nombre" }
-                                th { "Rango" }
-                                th { "Estado" }
-                            }
+                // Columna Derecha - Tabla (12/12 en móvil, 8/12 en tablet/escritorio)
+                div class="s12 m8" {
+                    article class="border round medium-padding" {
+                        h5 class="medium-margin" {
+                            "Personal Enlistado"
                         }
-                        tbody id="tabla-soldados" {
-                            (render_filas_soldados(&soldados))
+                        div class="responsive border" style="border-radius: 8px; overflow: hidden;" {
+                            table class="stripes" {
+                                thead {
+                                    tr {
+                                        th { "ID" }
+                                        th { "Nombre" }
+                                        th { "Rango" }
+                                        th { "Estado" }
+                                    }
+                                }
+                                tbody id="tabla-soldados" {
+                                    (render_filas_soldados(&soldados))
+                                }
+                            }
                         }
                     }
                 }

@@ -1,0 +1,140 @@
+/* Declaración de familias tipográficas */
+
+/* Google Sans - Regular */
+@font-face {
+    font-family: 'Google Sans';
+    src: url('/assets/fonts/Google/GoogleSans-Regular.woff2') format('woff2');
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+}
+
+/* Google Sans - Medium */
+@font-face {
+    font-family: 'Google Sans';
+    src: url('/assets/fonts/Google/GoogleSans-Medium.woff2') format('woff2');
+    font-weight: 500;
+    font-style: normal;
+    font-display: swap;
+}
+
+/* Google Sans - Bold */
+@font-face {
+    font-family: 'Google Sans';
+    src: url('/assets/fonts/Google/GoogleSans-Bold.woff2') format('woff2');
+    font-weight: 700;
+    font-style: normal;
+    font-display: swap;
+}
+
+/* Maple Mono NF - Regular */
+@font-face {
+    font-family: 'Maple Mono NF';
+    src: url('/assets/fonts/Maple/MapleMono-Regular.ttf.woff2') format('woff2');
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+}
+
+/* Maple Mono NF - Medium */
+@font-face {
+    font-family: 'Maple Mono NF';
+    src: url('/assets/fonts/Maple/MapleMono-Medium.ttf.woff2') format('woff2');
+    font-weight: 500;
+    font-style: normal;
+    font-display: swap;
+}
+
+/* Maple Mono NF - Bold */
+@font-face {
+    font-family: 'Maple Mono NF';
+    src: url('/assets/fonts/Maple/MapleMono-Bold.ttf.woff2') format('woff2');
+    font-weight: 700;
+    font-style: normal;
+    font-display: swap;
+}
+
+/* Aplicar Google Sans como tipografía principal a través de variables de BeerCSS */
+:root {
+    --font: "Google Sans", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
+
+    /* Variables de Color de Arquitectura (Modo Claro) */
+    --card-rust-bg: #ffebe5;
+    --card-rust-text: #801d00;
+    
+    --card-turso-bg: #d2f4ea;
+    --card-turso-text: #005a43;
+    
+    --card-axum-bg: #e6f0ff;
+    --card-axum-text: #003366;
+    
+    --card-maud-bg: #fde8ff;
+    --card-maud-text: #590059;
+    
+    --card-beercss-bg: #fff8e1;
+    --card-beercss-text: #6d4c41;
+    
+    --card-htmx-bg: #e0f7fa;
+    --card-htmx-text: #006064;
+}
+
+/* Variables de Color de Arquitectura (Modo Oscuro) */
+body.dark {
+    --card-rust-bg: #3d1508;
+    --card-rust-text: #ffdbcf;
+    
+    --card-turso-bg: #002b1f;
+    --card-turso-text: #96ecd3;
+    
+    --card-axum-bg: #0d233a;
+    --card-axum-text: #adcbf7;
+    
+    --card-maud-bg: #2d0c30;
+    --card-maud-text: #f9bfff;
+    
+    --card-beercss-bg: #3e2723;
+    --card-beercss-text: #ffe0b2;
+    
+    --card-htmx-bg: #002d30;
+    --card-htmx-text: #b2ebf2;
+}
+
+/* Clases de Tarjetas de Arquitectura */
+.card-rust {
+    background-color: var(--card-rust-bg) !important;
+    color: var(--card-rust-text) !important;
+}
+.card-turso {
+    background-color: var(--card-turso-bg) !important;
+    color: var(--card-turso-text) !important;
+}
+.card-axum {
+    background-color: var(--card-axum-bg) !important;
+    color: var(--card-axum-text) !important;
+}
+.card-maud {
+    background-color: var(--card-maud-bg) !important;
+    color: var(--card-maud-text) !important;
+}
+.card-beercss {
+    background-color: var(--card-beercss-bg) !important;
+    color: var(--card-beercss-text) !important;
+}
+.card-htmx {
+    background-color: var(--card-htmx-bg) !important;
+    color: var(--card-htmx-text) !important;
+}
+
+/* Aplicar Maple Mono NF a los componentes indicados (monospaced) */
+button,
+.button,
+footer,
+.chip,
+pre,
+code,
+kbd,
+samp,
+.font-mono {
+    font-family: 'Maple Mono NF', 'Cascadia Code', 'Fira Code', Consolas, Monaco, 'Courier New', Courier, monospace !important;
+}
+
