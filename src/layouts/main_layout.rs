@@ -1,5 +1,5 @@
 // Importamos Maud y nuestro componentes para conformar en su totalidad nuestro Layout
-use crate::components::{Footer, Header, NavBar};
+use crate::components::{footer, header, nav_bar};
 use maud::{DOCTYPE, Markup, html};
 
 pub struct PageContext<'a> {
@@ -40,12 +40,12 @@ pub fn layout(ctx: &PageContext, contenido: Markup) -> Markup {
         html {
             (head(ctx))
             body {
-                (Header::header(ctx.body_title))
-                (NavBar::navbar())
+                (header::header(ctx.body_title))
+                (nav_bar::navbar())
                 main {
                     (contenido)
                 }
-                (Footer::footer())
+                (footer::footer())
             }
         }
     }

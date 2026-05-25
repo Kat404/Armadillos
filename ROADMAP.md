@@ -22,6 +22,7 @@ _Objetivo: Usar el sistema de tipos de Rust para que la lógica de negocio sea "
 _Objetivo: Una UI rápida y privada sin el "overhead" de JavaScript._
 
 - [x] **Pattern IntoResponse:** Newtype para manejo de respuestas limpias.
+- [x] **Interactividad Hypermedia con HTMX y Maud:** Implementación inicial de flujo CRUD asíncrono para gestión de personal militar (`/soldiers`).
 - [ ] **Componentización Crítica:** Crear `src/views/components/` para elementos de UI que requieran validación visual (ej. indicadores de nivel de acceso).
 - [ ] **Seguridad en la Capa de Transporte:** Implementar protecciones CSRF mediante middlewares de Axum/Tower-HTTP, vital ya que HTMX usa peticiones AJAX.
 
@@ -29,7 +30,7 @@ _Objetivo: Una UI rápida y privada sin el "overhead" de JavaScript._
 
 _Objetivo: Blindar la base de datos contra accesos físicos no autorizados._
 
-- [ ] **Estrategia de Base de Datos:** Migración controlada de SQLite a PostgreSQL usando contenedores para paridad de entornos.
+- [x] **Estrategia de Base de Datos (Segura y Local-First):** Integración de Turso DB (reescrita en Rust) en modo local-first en `armadillos.db` para evitar FFI unsafe de C, y documentación del flujo en [docs/tursodb.md](docs/tursodb.md).
 - [ ] **Application-Level Encryption (ALE):** Implementar cifrado para campos sensibles (Nombres de oficiales, ubicaciones de armamento) antes de que lleguen a la DB.
 - [ ] **Backups Cifrados:** Scripting (posiblemente en Nushell) para automatizar respaldos hacia almacenamiento local o remoto usando encriptación de llave pública.
 

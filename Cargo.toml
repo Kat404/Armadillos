@@ -23,3 +23,6 @@ serde = { version = "1.0.228", features = ["derive"] }
 # El observador: Para ver qué pasa en tu terminal (Logs)
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+
+# El almacenamiento experimental: Base de Datos basada en SQLite reescrita en Rust
+turso = "0.6.1"

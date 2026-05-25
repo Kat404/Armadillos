@@ -1,1 +1,1 @@
-pub mod MainLayout;
+pub mod main_layout;

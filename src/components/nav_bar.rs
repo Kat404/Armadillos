@@ -5,6 +5,7 @@ pub fn navbar() -> Markup {
         nav {
             a href="/" { "Inicio" }
             a href="/about" { "Acerca de" }
+            a href="/soldiers" { "Soldados" }
         }
     }
 }

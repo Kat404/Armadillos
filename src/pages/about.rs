@@ -1,4 +1,4 @@
-use crate::layouts::MainLayout::{PageContext, layout}; // Importamos nuestro Layout
+use crate::layouts::main_layout::{PageContext, layout}; // Importamos nuestro Layout
 use maud::{Markup, html};
 
 pub async fn pagina_about() -> Markup {

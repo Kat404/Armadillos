@@ -16,8 +16,9 @@ Generar un software web app potente, rápido, privado y eficiente para manejar l
 - **Lenguaje:** Rust (foco en seguridad de memoria).
 - **Backend/Routing:** Axum + Tokio.
 - **HTML (Plantillas):** Maud (Type-safe HTML generation).
+- **CSS (Estilado)**: PicoCSS (Framework CSS mínimo para HTML semántico).
 - **Frontend Interactivo:** HTMX (Arquitectura centrada en el servidor).
-- **Persistencia:** SQLite (dev) / PostgreSQL (prod) vía SQLx.
+- **Persistencia:** Turso (dev) / PostgreSQL (prod) vía SQLx.
 - **Serialización:** Serde.
 - **Observabilidad:** Tracing (logs auditables).
 - **Middleware:** Tower.

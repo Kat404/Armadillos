@@ -1,3 +1,3 @@
-pub mod Header;
-pub mod NavBar;
-pub mod Footer;
+pub mod footer;
+pub mod header;
+pub mod nav_bar;

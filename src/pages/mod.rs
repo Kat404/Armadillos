@@ -1,2 +1,3 @@
-pub mod About;
-pub mod Main;
+pub mod about;
+pub mod index;
+pub mod soldiers;
