@@ -6,14 +6,21 @@ pub struct PageContext<'a> {
     pub head_title: &'a str,
     pub body_title: &'a str,
     pub description: &'a str,
+    pub csrf_token: &'a str,
 }
 
 impl<'a> PageContext<'a> {
-    pub fn new(head_title: &'a str, body_title: &'a str, description: &'a str) -> Self {
+    pub fn new(
+        head_title: &'a str,
+        body_title: &'a str,
+        description: &'a str,
+        csrf_token: &'a str,
+    ) -> Self {
         Self {
             head_title,
             body_title,
             description,
+            csrf_token,
         }
     }
 }
@@ -31,7 +38,8 @@ fn head(ctx: &PageContext) -> Markup {
             link rel="stylesheet" href="/assets/beercss/beer.min.css";
             link rel="stylesheet" href="/assets/css/style.css";
             script type="module" src="/assets/beercss/beer.min.js" {}
-            script type="module" src="https://cdn.jsdelivr.net/npm/material-dynamic-colors@1.1.4/dist/cdn/material-dynamic-colors.min.js" {}
+            script type="module" src="/assets/js/material-dynamic-colors.min.js" {}
+            script src="/assets/js/htmx.min.js" {}
         }
     }
 }
@@ -42,7 +50,7 @@ pub fn layout(ctx: &PageContext, contenido: Markup) -> Markup {
         (DOCTYPE)
         html {
             (head(ctx))
-            body {
+            body hx-headers=(format!(r#"{{"X-CSRF-Token": "{}"}}"#, ctx.csrf_token)) {
                 (header::header(ctx.body_title))
                 main class="responsive" {
                     (contenido)

@@ -1,6 +1,6 @@
 [package]
 name = "Armadillos"
-version = "0.1.5"
+version = "0.1.6"
 edition = "2024"
 
 [dependencies]
@@ -22,7 +22,10 @@ serde = { version = "1.0.228", features = ["derive"] }
 
 # El observador: Para ver qué pasa en tu terminal (Logs)
 tracing = "0.1.44"
-tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3.23", features = ["env-filter", "json"] }
 
 # El almacenamiento experimental: Base de Datos basada en SQLite reescrita en Rust
 turso = "0.6.1"
+
+# Generación de números y tokens aleatorios seguros (CSRF)
+rand = "0.8.6"

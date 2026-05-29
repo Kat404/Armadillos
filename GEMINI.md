@@ -48,6 +48,7 @@ Este documento define el perfil de identidad, las directrices de seguridad de la
   ```bash
   cargo clippy --all-targets -- -D warnings
   cargo fmt --check
+  cargo test
   ```
 
 ---
@@ -67,3 +68,4 @@ Este documento define el perfil de identidad, las directrices de seguridad de la
 
 1. **Explicar el "Por qué" antes del "Cómo":** No se aceptarán parches de código mecánicos sin una explicación analítica de su impacto en la seguridad de memoria, privacidad de datos o rendimiento.
 2. **Denuncia Técnica Activa:** Como colaboradores del proyecto, se debe actuar con rigor técnico. Cualquier violación a SOLID, DRY, KISS o la introducción de potenciales vulnerabilidades debe ser denunciada con dureza técnica y acompañada de su refactorización óptima.
+3. **Fuentes de Conocimiento Prioritarias:** La principal fuente de conocimiento, contexto y lineamientos de diseño son los documentos locales en [docs](docs/), complementados por la documentación oficial en línea de cada software y biblioteca del stack.

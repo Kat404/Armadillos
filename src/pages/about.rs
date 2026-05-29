@@ -1,11 +1,14 @@
 use crate::layouts::main_layout::{PageContext, layout}; // Importamos nuestro Layout
+use crate::security::CsrfToken;
+use axum::Extension;
 use maud::{Markup, html};
 
-pub async fn pagina_about() -> Markup {
+pub async fn pagina_about(Extension(csrf_token): Extension<CsrfToken>) -> Markup {
     let ctx = PageContext::new(
         "Armadillos - Alternativa FOSS, privada y segura para administración militar",
         "Acerca de Armadillos",
         "Armadillos - Descubre sus principales características y cómo compite contra otros software de la industria",
+        &csrf_token.0,
     );
 
     layout(
