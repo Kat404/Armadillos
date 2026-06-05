@@ -51,8 +51,9 @@ pub fn layout(ctx: &PageContext, contenido: Markup) -> Markup {
         html {
             (head(ctx))
             body hx-headers=(format!(r#"{{"X-CSRF-Token": "{}"}}"#, ctx.csrf_token)) {
-                (header::header(ctx.body_title))
+                (header::header())
                 main class="responsive" {
+                    h4 class="medium-margin center-align" { (ctx.body_title) }
                     (contenido)
                 }
                 (footer::footer())

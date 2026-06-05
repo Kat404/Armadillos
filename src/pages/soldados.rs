@@ -1,5 +1,5 @@
 use crate::AppState;
-use crate::domain::types::EstadoServicio;
+use crate::domain::EstadoServicio;
 use crate::layouts::main_layout::{PageContext, layout};
 use crate::security::CsrfToken;
 use axum::{Extension, Form, extract::State};
@@ -181,13 +181,13 @@ fn render_filas_soldados(soldados: &[Soldado]) -> Markup {
 }
 
 /// Handler GET: Renderiza la página completa de gestión de soldados.
-pub async fn pagina_soldiers(
+pub async fn pagina_soldados(
     State(state): State<AppState>,
     Extension(csrf_token): Extension<CsrfToken>,
 ) -> Markup {
     use tracing::Instrument;
 
-    let span = tracing::info_span!("pagina_soldiers");
+    let span = tracing::info_span!("pagina_soldados");
     async {
         tracing::info!("Cargando panel de administración de soldados");
         let ctx = PageContext::new(
@@ -203,9 +203,6 @@ pub async fn pagina_soldiers(
         layout(
             &ctx,
             html! {
-                h4 class="medium-margin" {
-                    "Panel de Control de Soldados"
-                }
                 div class="grid" {
                     // Columna Izquierda - Formulario (12/12 en móvil, 4/12 en tablet/escritorio)
                     div class="s12 m4" {
@@ -213,7 +210,7 @@ pub async fn pagina_soldiers(
                             h5 class="medium-margin" {
                                 "Incorporar Soldado"
                             }
-                            form hx-post="/soldiers" hx-target="#tabla-soldados" hx-swap="innerHTML" {
+                            form hx-post="/soldados" hx-target="#tabla-soldados" hx-swap="innerHTML" {
                                 div class="field label border" {
                                     input type="text" id="matricula" name="matricula" placeholder=" " required;
                                     label for="matricula" { "Matrícula" }
@@ -372,4 +369,111 @@ pub async fn agregar_soldado(
 
     let soldados = obtener_soldados(&state).await.unwrap_or_default();
     render_filas_soldados(&soldados)
+}
+
+/// Formulario para simular el operador actual en sesión.
+#[derive(Deserialize)]
+pub struct SimularOperador {
+    pub operador_id: i64,
+    pub redir_path: Option<String>,
+}
+
+/// Handler POST `/simular_operador`: Establece la cookie de simulación del operador actual.
+pub async fn simular_operador(
+    Form(payload): Form<SimularOperador>,
+) -> impl axum::response::IntoResponse {
+    use axum::http::{HeaderMap, header};
+    use axum::response::Redirect;
+
+    let mut headers = HeaderMap::new();
+    let cookie = format!(
+        "operador_soldado_id={}; Path=/; SameSite=Strict; HttpOnly",
+        payload.operador_id
+    );
+    headers.insert(
+        header::SET_COOKIE,
+        axum::http::HeaderValue::from_str(&cookie).unwrap(),
+    );
+
+    let redirect_url = payload
+        .redir_path
+        .unwrap_or_else(|| "/soldados".to_string());
+    (headers, Redirect::to(&redirect_url))
+}
+
+/// Estructura que consolida los datos legibles y el contexto de seguridad del operador simulado.
+pub struct DatosOperador {
+    pub id: i64,
+    pub nombre_completo: String,
+    pub rango_nombre: String,
+    pub seccion_nombre: String,
+    pub contexto: crate::domain::ContextoAcceso,
+}
+
+/// Resuelve el operador militar activo leyendo la cookie e interrogando la base de datos.
+/// Si no hay cookie, utiliza el primer soldado registrado en el sistema como fallback por defecto.
+pub async fn resolver_operador_activo(
+    headers: &axum::http::HeaderMap,
+    state: &crate::AppState,
+) -> Result<Option<DatosOperador>, String> {
+    use crate::domain::{ContextoAcceso, Rango};
+    use crate::security::extraer_cookie;
+
+    let operador_id_opt = extraer_cookie(headers, "operador_soldado_id")
+        .and_then(|id_str| id_str.parse::<i64>().ok());
+
+    let conn = state.db.connect().map_err(|e| e.to_string())?;
+
+    let operador_id = match operador_id_opt {
+        Some(id) => id,
+        None => {
+            let mut rows = conn
+                .query("SELECT id FROM soldados ORDER BY id ASC LIMIT 1", ())
+                .await
+                .map_err(|e| e.to_string())?;
+            if let Some(row) = rows.next().await.map_err(|e| e.to_string())? {
+                row.get(0).map_err(|e| e.to_string())?
+            } else {
+                return Ok(None);
+            }
+        }
+    };
+
+    let mut rows = conn
+        .query(
+            "SELECT s.id, s.nombre, s.apellido_paterno, s.rango_id, sec.nombre, sec.es_servicio_belico, r.nombre
+             FROM soldados s
+             JOIN secciones_servicios sec ON s.seccion_servicio_id = sec.id
+             JOIN rangos r ON s.rango_id = r.id
+             WHERE s.id = ?1",
+            (operador_id,),
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if let Some(row) = rows.next().await.map_err(|e| e.to_string())? {
+        let id: i64 = row.get(0).map_err(|e| e.to_string())?;
+        let nombre: String = row.get(1).map_err(|e| e.to_string())?;
+        let apellido: String = row.get(2).map_err(|e| e.to_string())?;
+        let rango_id: i64 = row.get(3).map_err(|e| e.to_string())?;
+        let seccion_nombre: String = row.get(4).map_err(|e| e.to_string())?;
+        let es_servicio_belico_num: i64 = row.get(5).map_err(|e| e.to_string())?;
+        let rango_nombre: String = row.get(6).map_err(|e| e.to_string())?;
+
+        let es_servicio_belico = es_servicio_belico_num != 0;
+        let rango = Rango::from_id(rango_id)?;
+
+        Ok(Some(DatosOperador {
+            id,
+            nombre_completo: format!("{} {}", nombre, apellido),
+            rango_nombre,
+            seccion_nombre,
+            contexto: ContextoAcceso {
+                rango,
+                es_servicio_belico,
+            },
+        }))
+    } else {
+        Ok(None)
+    }
 }

@@ -1,6 +1,6 @@
 [package]
 name = "Armadillos"
-version = "0.1.7"
+version = "0.1.8"
 edition = "2024"
 
 [dependencies]
@@ -29,3 +29,6 @@ turso = "0.6.1"
 
 # Generación de números y tokens aleatorios seguros (CSRF)
 rand = "0.8.6"
+
+[dev-dependencies]
+tower = { version = "0.5.2", features = ["util"] }

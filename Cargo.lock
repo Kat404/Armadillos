@@ -4,13 +4,14 @@ version = 4
 
 [[package]]
 name = "Armadillos"
-version = "0.1.6"
+version = "0.1.8"
 dependencies = [
  "axum",
  "maud",
  "rand 0.8.6",
  "serde",
  "tokio",
+ "tower",
  "tower-http",
  "tracing",
  "tracing-subscriber",

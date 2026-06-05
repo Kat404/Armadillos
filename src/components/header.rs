@@ -1,16 +1,12 @@
 use crate::components::nav_bar;
 use maud::{Markup, html};
 
-pub fn header(title: &str) -> Markup {
+pub fn header() -> Markup {
     html! {
         header class="primary-container" {
             nav {
-                h5 class="m l" {
-                    (title)
-                }
-                h6 class="s" {
-                    (title)
-                }
+                // Espacio libre para empujar el menú al centro
+                div class="max" {}
 
                 // Menú de navegación integrado
                 (nav_bar::navbar())

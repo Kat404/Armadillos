@@ -124,7 +124,7 @@ CREATE TABLE IF NOT EXISTS asignaciones_equipamiento (
 ///
 /// **¿Por qué insertar rangos como datos semilla y no como un Enum puro?**
 /// Porque la base de datos necesita referencias de clave foránea (`rango_id`)
-/// estables. El Enum en Rust (`domain::types::Rango`) sigue existiendo para
+/// estables. El Enum en Rust (`domain::Rango`) sigue existiendo para
 /// validación en tiempo de compilación, pero su mapeo a la BD requiere filas
 /// persistidas con IDs predecibles.
 const SEED_RANGOS_SQL: &str = "

@@ -14,7 +14,7 @@ Durante la fase experimental del proyecto, decidimos implementar Turso DB en su 
 
 ## Estructura de la Base de Datos (Esquema 3FN)
 
-El esquema se inicializa automáticamente al arrancar la aplicación mediante el módulo `src/db/migrations.rs`, que ejecuta todas las sentencias DDL y datos semilla como una transacción atómica vía `execute_batch`. Las tablas están diseñadas en **Tercera Forma Normal (3FN)** para eliminar redundancias y dependencias transitivas.
+El esquema se inicializa automáticamente al arrancar la aplicación mediante el módulo `src/db/database.rs`, que ejecuta todas las sentencias DDL y datos semilla como una transacción atómica vía `execute_batch`. Las tablas están diseñadas en **Tercera Forma Normal (3FN)** para eliminar redundancias y dependencias transitivas.
 
 ### Tablas de Lookup (Catálogos)
 

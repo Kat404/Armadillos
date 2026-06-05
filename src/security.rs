@@ -15,8 +15,8 @@ pub fn generate_csrf_token() -> String {
     token_bytes.iter().map(|b| format!("{:02x}", b)).collect()
 }
 
-fn extract_cookie(req: &Request<Body>, name: &str) -> Option<String> {
-    req.headers()
+pub fn extraer_cookie(headers: &header::HeaderMap, name: &str) -> Option<String> {
+    headers
         .get(header::COOKIE)?
         .to_str()
         .ok()?
@@ -25,6 +25,10 @@ fn extract_cookie(req: &Request<Body>, name: &str) -> Option<String> {
         .find(|s| s.starts_with(name))
         .and_then(|s| s.split('=').nth(1))
         .map(|s| s.to_string())
+}
+
+fn extract_cookie(req: &Request<Body>, name: &str) -> Option<String> {
+    extraer_cookie(req.headers(), name)
 }
 
 pub async fn csrf_middleware(mut req: Request<Body>, next: Next) -> Result<Response, StatusCode> {
