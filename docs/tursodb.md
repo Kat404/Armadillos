@@ -12,20 +12,88 @@ Durante la fase experimental del proyecto, decidimos implementar Turso DB en su 
 
 ---
 
-## Estructura de la Base de Datos
+## Estructura de la Base de Datos (Esquema 3FN)
 
-El esquema se inicializa automáticamente al arrancar la aplicación. La tabla principal de la base de datos posee la siguiente estructura:
+El esquema se inicializa automáticamente al arrancar la aplicación mediante el módulo `src/db/migrations.rs`, que ejecuta todas las sentencias DDL y datos semilla como una transacción atómica vía `execute_batch`. Las tablas están diseñadas en **Tercera Forma Normal (3FN)** para eliminar redundancias y dependencias transitivas.
 
-### Tabla: soldados
+### Tablas de Lookup (Catálogos)
 
-Representa los registros de personal militar administrados en el sistema.
+#### rangos
 
-| Campo | Tipo | Restricción | Descripción |
-| :--- | :--- | :--- | :--- |
-| `id` | INTEGER | PRIMARY KEY AUTOINCREMENT | Identificador único autoincremental |
-| `nombre` | TEXT | NOT NULL | Nombre completo del soldado |
-| `rango` | TEXT | NOT NULL | Rango militar (ej: Cabo, Sargento) |
-| `estado` | TEXT | NOT NULL | Estado de servicio (ej: Activo, Licencia) |
+Catálogo oficial de rangos militares mexicanos (SEDENA/SEMAR).
+
+| Campo              | Tipo    | Restricción               | Descripción                                                     |
+| :----------------- | :------ | :------------------------ | :-------------------------------------------------------------- |
+| `id`               | INTEGER | PRIMARY KEY AUTOINCREMENT | Identificador único                                             |
+| `nombre`           | TEXT    | NOT NULL UNIQUE           | Nombre del rango (ej: "Coronel")                                |
+| `categoria`        | TEXT    | NOT NULL                  | Categoría orgánica (Tropa, Clases, Oficiales, Jefes, Generales) |
+| `orden_jerarquico` | INTEGER | NOT NULL UNIQUE           | Nivel numérico para comparaciones de acceso ABAC                |
+
+#### secciones_servicios
+
+Catálogo de secciones/servicios orgánicos de un plantel militar.
+
+| Campo                | Tipo    | Restricción               | Descripción                                                             |
+| :------------------- | :------ | :------------------------ | :---------------------------------------------------------------------- |
+| `id`                 | INTEGER | PRIMARY KEY AUTOINCREMENT | Identificador único                                                     |
+| `nombre`             | TEXT    | NOT NULL UNIQUE           | Nombre de la sección (ej: "Materiales de Guerra")                       |
+| `es_servicio_belico` | INTEGER | NOT NULL DEFAULT 0        | Flag ABAC: 1 si el personal de clases tiene acceso al inventario bélico |
+
+#### categorias_equipamiento
+
+Clasificación de tipos de equipamiento con flag de control de acceso.
+
+| Campo                   | Tipo    | Restricción               | Descripción                                            |
+| :---------------------- | :------ | :------------------------ | :----------------------------------------------------- |
+| `id`                    | INTEGER | PRIMARY KEY AUTOINCREMENT | Identificador único                                    |
+| `nombre`                | TEXT    | NOT NULL UNIQUE           | Nombre de la categoría (ej: "Armamento", "Municiones") |
+| `es_material_de_guerra` | INTEGER | NOT NULL DEFAULT 0        | Flag: 1 si requiere permisos ABAC para CRUD            |
+
+### Tablas Operativas
+
+#### soldados
+
+Registro de personal militar con claves foráneas a las tablas de lookup.
+
+| Campo                 | Tipo    | Restricción                           | Descripción                                     |
+| :-------------------- | :------ | :------------------------------------ | :---------------------------------------------- |
+| `id`                  | INTEGER | PRIMARY KEY AUTOINCREMENT             | Identificador único interno                     |
+| `matricula`           | TEXT    | NOT NULL UNIQUE                       | Clave natural de negocio (matrícula militar)    |
+| `nombre`              | TEXT    | NOT NULL                              | Nombre(s) de pila                               |
+| `apellido_paterno`    | TEXT    | NOT NULL                              | Apellido paterno                                |
+| `apellido_materno`    | TEXT    | (nullable)                            | Apellido materno (opcional)                     |
+| `rango_id`            | INTEGER | NOT NULL FK → rangos(id)              | Referencia al rango asignado                    |
+| `seccion_servicio_id` | INTEGER | NOT NULL FK → secciones_servicios(id) | Referencia a la sección de servicio             |
+| `estado`              | TEXT    | NOT NULL DEFAULT 'Activo'             | Estado de servicio (Activo, Licencia, Retirado) |
+
+#### equipamiento
+
+Inventario físico del plantel con código de inventario único.
+
+| Campo                 | Tipo    | Restricción                               | Descripción                                   |
+| :-------------------- | :------ | :---------------------------------------- | :-------------------------------------------- |
+| `id`                  | INTEGER | PRIMARY KEY AUTOINCREMENT                 | Identificador único                           |
+| `codigo_inventario`   | TEXT    | NOT NULL UNIQUE                           | Código de trazabilidad física (ej: "ARM-001") |
+| `nombre`              | TEXT    | NOT NULL                                  | Nombre del ítem                               |
+| `descripcion`         | TEXT    | (nullable)                                | Descripción técnica del equipo                |
+| `categoria_id`        | INTEGER | NOT NULL FK → categorias_equipamiento(id) | Referencia a la categoría                     |
+| `estado_conservacion` | TEXT    | NOT NULL DEFAULT 'Operativo'              | Estado físico del equipo                      |
+| `stock_total`         | INTEGER | NOT NULL DEFAULT 0                        | Cantidad total en inventario                  |
+| `stock_disponible`    | INTEGER | NOT NULL DEFAULT 0                        | Cantidad disponible (no asignada)             |
+
+#### asignaciones_equipamiento
+
+Cadena de custodia: registro de quién recibió qué equipo y quién lo autorizó.
+
+| Campo                       | Tipo    | Restricción                      | Descripción                           |
+| :-------------------------- | :------ | :------------------------------- | :------------------------------------ |
+| `id`                        | INTEGER | PRIMARY KEY AUTOINCREMENT        | Identificador único                   |
+| `soldado_id`                | INTEGER | NOT NULL FK → soldados(id)       | Soldado que recibe el equipo          |
+| `equipamiento_id`           | INTEGER | NOT NULL FK → equipamiento(id)   | Equipo asignado                       |
+| `cantidad`                  | INTEGER | NOT NULL DEFAULT 1               | Cantidad asignada                     |
+| `fecha_asignacion`          | TEXT    | NOT NULL DEFAULT datetime('now') | Timestamp de la asignación            |
+| `fecha_devolucion`          | TEXT    | (nullable)                       | NULL mientras el equipo esté asignado |
+| `autorizado_por_soldado_id` | INTEGER | NOT NULL FK → soldados(id)       | Soldado que autorizó la entrega       |
 
 ---
 
@@ -35,10 +103,10 @@ La interfaz implementa un patrón Hypermedia centrado en el servidor. El flujo d
 
 1. **Carga Inicial (`GET`):** El cliente solicita `/soldiers`. El handler lee los soldados de la base de datos y renderiza la página completa combinando el layout y las filas.
 2. **Interactividad Asíncrona (`POST`):**
-    - El formulario en el cliente intercepta el envío mediante el atributo `hx-post="/soldiers"`.
-    - Axum procesa el registro e inserta el elemento en la base de datos de Turso.
-    - El servidor responde únicamente con el fragmento HTML correspondiente a las filas actualizadas (`<tr>`).
-    - HTMX inserta esta respuesta directamente en el contenedor del navegador (`tbody`) sin recargar la página.
+   - El formulario en el cliente intercepta el envío mediante el atributo `hx-post="/soldiers"`.
+   - Axum procesa el registro e inserta el elemento en la base de datos de Turso.
+   - El servidor responde únicamente con el fragmento HTML correspondiente a las filas actualizadas (`<tr>`).
+   - HTMX inserta esta respuesta directamente en el contenedor del navegador (`tbody`) sin recargar la página.
 
 ---
 

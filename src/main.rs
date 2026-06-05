@@ -1,4 +1,5 @@
 mod components; // Declaramos módulo de componentes/
+mod db; // Módulo de base de datos (migraciones y esquema)
 mod domain; // Módulo para tipos seguros de dominio militar
 mod layouts; // Declaramos módulo raíz de los layouts/
 mod pages; // Declaramos módulo raíz de las pages/
@@ -76,29 +77,25 @@ async fn main() {
     };
 
     // Inicialización de TursoDB con cifrado nativo Aegis256
-    let db = turso::Builder::new_local("armadillos.db")
+    let database = turso::Builder::new_local("armadillos.db")
         .experimental_encryption(true)
         .with_encryption(encryption_opts)
         .build()
         .await
         .expect("Error al inicializar TursoDB cifrada");
 
-    // Conectar y crear la tabla 'soldados' si no existe
-    let conn = db.connect().expect("Error al conectar a la base de datos");
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS soldados(
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            nombre TEXT NOT NULL,
-            rango TEXT NOT NULL,
-            estado TEXT NOT NULL
-        )",
-        (),
-    )
-    .await
-    .expect("Error al crear la tabla 'soldados'");
+    // Conectar y ejecutar las migraciones de esquema y datos semilla
+    let conn = database
+        .connect()
+        .expect("Error al conectar a la base de datos");
+    db::migrations::ejecutar_migraciones(&conn)
+        .await
+        .expect("Error crítico al ejecutar migraciones de base de datos");
 
     // Empaquetar la BD en el estado de la aplicación
-    let state = AppState { db: Arc::new(db) };
+    let state = AppState {
+        db: Arc::new(database),
+    };
 
     // Construir la app con una sola ruta simple y logs de peticiones
     let routes = Router::new()
