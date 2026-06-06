@@ -25,7 +25,7 @@ _Objetivo: Una UI rápida y privada sin el "overhead" de JavaScript._
 - [x] **Pattern IntoResponse:** Newtype para manejo de respuestas limpias.
 - [x] **Interactividad Hypermedia con HTMX y Maud:** Implementación inicial de flujo CRUD asíncrono para gestión de personal militar (`/soldiers`).
 - [x] **Autocontención de Assets:** Descargar y servir localmente `htmx.min.js` y `material-dynamic-colors.min.js` en [main_layout.rs](src/layouts/main_layout.rs), removiendo la dependencia de CDNs.
-- [ ] **Componentización Crítica:** Crear `src/views/components/` para elementos de UI que requieran validación visual (ej. indicadores de nivel de acceso).
+- [x] **Componentización Crítica:** Crear `src/views/components/` (o `src/components/`) para elementos de UI que requieran validación visual (ej. indicadores de nivel de acceso).
 - [x] **Seguridad en la Capa de Transporte:** Implementar protecciones CSRF mediante middlewares de Axum/Tower-HTTP, vital ya que HTMX usa peticiones AJAX.
 
 ## Fase 4: Persistencia y Cifrado en Reposo
@@ -35,7 +35,7 @@ _Objetivo: Blindar la base de datos contra accesos físicos no autorizados._
 - [x] **Estrategia de Base de Datos (Segura y Local-First):** Integración de Turso DB (reescrita en Rust) en modo local-first en `armadillos.db` para evitar FFI unsafe de C, y documentación del flujo en [docs/tursodb.md](docs/tursodb.md).
 - [x] **Cifrado de Base de Datos TursoDB:** Configurar el cifrado de página nativo en reposo de Turso (`Aegis256`) utilizando la clave del sistema.
 - [x] **Application-Level Encryption (ALE):** Implementar cifrado para campos sensibles (Nombres de oficiales, ubicaciones de armamento) antes de que lleguen a la DB.
-- [ ] **Backups Cifrados:** Scripting (posiblemente en Nushell) para automatizar respaldos hacia almacenamiento local o remoto usando encriptación de llave pública.
+- [x] **Backups Cifrados:** Scripting (posiblemente en Nushell) para automatizar respaldos hacia almacenamiento local o remoto usando encriptación de llave pública.
 
 ## Fase 5: Auditabilidad y "Non-Repudiation"
 

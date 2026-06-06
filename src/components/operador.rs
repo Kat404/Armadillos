@@ -18,17 +18,8 @@ pub fn info_operador(
                                 p class="bold no-margin" { (rango) " — " (nombre) }
                                 p class="caption no-margin text-secondary" { "Sección: " (seccion) }
                             }
-                            @if puede_administrar_belico {
-                                span class="chip success" {
-                                    i { "verified" }
-                                    span { "AUTORIZADO PARA MATERIAL DE GUERRA" }
-                                }
-                            } @else {
-                                span class="chip error" {
-                                    i { "block" }
-                                    span { "NO AUTORIZADO PARA MATERIAL BÉLICO" }
-                                }
-                            }
+                            (crate::components::nivel_acceso::badge_nivel_acceso(puede_administrar_belico))
+
                         }
                     } @else {
                         p class="bold text-error no-margin" { "Sin sesión militar activa en el sistema" }
