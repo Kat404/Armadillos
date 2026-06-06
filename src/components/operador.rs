@@ -1,14 +1,11 @@
 use maud::{Markup, html};
 
-/// Genera la interfaz de simulación de usuario/operador activo para el control ABAC.
-pub fn selector_operador(
-    operador_id: Option<i64>,
-    operador_nombre: Option<String>,
-    operador_rango: Option<String>,
-    operador_seccion: Option<String>,
+/// Genera la interfaz que muestra el operador militar activo en la sesión.
+pub fn info_operador(
+    operador_nombre: Option<&str>,
+    operador_rango: Option<&str>,
+    operador_seccion: Option<&str>,
     puede_administrar_belico: bool,
-    soldados_opciones: &[(i64, String)],
-    redir_path: &str,
 ) -> Markup {
     html! {
         article class="border round medium-padding margin-bottom" {
@@ -34,21 +31,21 @@ pub fn selector_operador(
                             }
                         }
                     } @else {
-                        p class="bold text-error no-margin" { "Sin operador simulado activo en el sistema" }
+                        p class="bold text-error no-margin" { "Sin sesión militar activa en el sistema" }
                     }
                 }
                 div {
-                    form action="/simular_operador" method="POST" class="row gap align-center no-margin" {
-                        input type="hidden" name="redir_path" value=(redir_path);
-                        div class="field label border small no-margin" style="min-width: 240px;" {
-                            select name="operador_id" onchange="this.form.submit()" {
-                                @for &(s_id, ref label) in soldados_opciones {
-                                    option value=(s_id) selected?[operador_id == Some(s_id)] {
-                                        (label)
-                                    }
-                                }
+                    @if operador_nombre.is_some() {
+                        form action="/logout" method="POST" class="no-margin" {
+                            button type="submit" class="button error outline row gap align-center" {
+                                i { "logout" }
+                                span { "Cerrar Sesión" }
                             }
-                            label { "Cambiar Operador Activo" }
+                        }
+                    } @else {
+                        a href="/login" class="button primary row gap align-center no-margin" {
+                            i { "login" }
+                            span { "Iniciar Sesión" }
                         }
                     }
                 }

@@ -34,7 +34,7 @@ _Objetivo: Blindar la base de datos contra accesos físicos no autorizados._
 
 - [x] **Estrategia de Base de Datos (Segura y Local-First):** Integración de Turso DB (reescrita en Rust) en modo local-first en `armadillos.db` para evitar FFI unsafe de C, y documentación del flujo en [docs/tursodb.md](docs/tursodb.md).
 - [x] **Cifrado de Base de Datos TursoDB:** Configurar el cifrado de página nativo en reposo de Turso (`Aegis256`) utilizando la clave del sistema.
-- [ ] **Application-Level Encryption (ALE):** Implementar cifrado para campos sensibles (Nombres de oficiales, ubicaciones de armamento) antes de que lleguen a la DB.
+- [x] **Application-Level Encryption (ALE):** Implementar cifrado para campos sensibles (Nombres de oficiales, ubicaciones de armamento) antes de que lleguen a la DB.
 - [ ] **Backups Cifrados:** Scripting (posiblemente en Nushell) para automatizar respaldos hacia almacenamiento local o remoto usando encriptación de llave pública.
 
 ## Fase 5: Auditabilidad y "Non-Repudiation"
@@ -96,27 +96,27 @@ _Objetivo: Mitigar las brechas de suplantación, no-repudio y fuga de datos pers
 
 ### 🚨 Auditoría de Vulnerabilidades y Brechas de Seguridad Identificadas (v0.1.x)
 
-- [ ] **VULN-01: Escalada de Privilegios y Suplantación vía Manipulación de Cookie de Operador (Crítica)**
+- [x] **VULN-01: Escalada de Privilegios y Suplantación vía Manipulación de Cookie de Operador (Crítica)**
   - **Ubicación en Código:** [soldados.rs](src/pages/soldados.rs#L422-L423) en la función `resolver_operador_activo`.
   - **Detalle Técnico:** La identidad y el contexto del operador activo se determinan leyendo la cookie en texto plano y no firmada `operador_soldado_id`.
   - **Vector de Ataque:** Cualquier usuario malintencionado con acceso al cliente puede alterar la cookie (ej. cambiar de `3` a `1`) para saltarse completamente los controles de acceso ABAC de [acceso.rs](src/domain/acceso.rs) y registrar/devolver material de guerra sin autorización real.
   - **Mitigación Requerida:** Sustituir por autenticación mediante sesión firmada y cifrada con `PrivateCookieJar` y login real.
-- [ ] **VULN-02: Mutabilidad de la Bitácora Histórica (Falta de No-Repudio en Cadena de Custodia)**
+- [x] **VULN-02: Mutabilidad de la Bitácora Histórica (Falta de No-Repudio en Cadena de Custodia)**
   - **Ubicación en Código:** [asignaciones.rs](src/pages/asignaciones.rs#L475-L483) y [asignaciones.rs](src/pages/asignaciones.rs#L670) (operaciones de inserción y actualización directa).
   - **Detalle Técnico:** La bitácora en la tabla `asignaciones_equipamiento` es mutable mediante sentencias SQL estándar y carece de verificación criptográfica de integridad.
   - **Vector de Ataque:** Un operador corrupto con acceso directo a la base de datos SQLite (`armadillos.db`) o mediante inyección SQL puede borrar o alterar registros antiguos de asignación de armas para ocultar desvíos.
   - **Mitigación Requerida:** Implementar un esquema Hash-Chain SHA-256 en la tabla donde cada registro dependa del hash del registro anterior.
-- [ ] **VULN-03: Exposición de Datos Personales (PII) en Reposo y Memoria**
+- [x] **VULN-03: Exposición de Datos Personales (PII) en Reposo y Memoria**
   - **Ubicación en Código:** Tabla `soldados` (esquema DDL en [database.rs](src/db/database.rs#L68-L77)) y structs en [soldados.rs](src/pages/soldados.rs).
   - **Detalle Técnico:** Matrícula, nombres y apellidos se persisten en texto claro. Además, al procesarse en memoria, se usan strings convencionales que no se limpian de la memoria física (RAM) tras su uso.
   - **Vector de Ataque:** Un dump de memoria o un compromiso físico del archivo de la base de datos expone la estructura de personal de la unidad militar.
   - **Mitigación Requerida:** Encriptación a nivel de aplicación (ALE) con AES-256-GCM o ChaCha20-Poly1305 para columnas PII, y wrapping de variables sensibles en tipos `SecretString` (crate `secrecy`).
-- [ ] **VULN-04: Fuga de PII en Logs de Depuración y Observabilidad**
+- [x] **VULN-04: Fuga de PII en Logs de Depuración y Observabilidad**
   - **Ubicación en Código:** [soldados.rs](src/pages/soldados.rs#L312) (`matricula = %nuevo.matricula`), [asignaciones.rs](src/pages/asignaciones.rs#L443) (`operador = %operador.nombre_completo`), [asignaciones.rs](src/pages/asignaciones.rs#L522), [asignaciones.rs](src/pages/asignaciones.rs#L628), [asignaciones.rs](src/pages/asignaciones.rs#L703) e [inventario.rs](src/pages/inventario.rs#L455).
   - **Detalle Técnico:** Las macros de eventos `tracing::info!`, `tracing::warn!` y `tracing::error!` registran directamente nombres completos de operadores y matrículas en formato JSON de texto plano.
   - **Vector de Ataque:** En entornos centralizados de recolección de logs, la PII militar viaja y se almacena en texto claro en servidores externos sin protección de identidad.
   - **Mitigación Requerida:** Crear un formateador personalizado en `tracing-subscriber` que filtre o hashee campos con PII.
-- [ ] **VULN-05: Exposición de Red por Ausencia de Cabeceras HTTP de Seguridad (Hardening)**
+- [x] **VULN-05: Exposición de Red por Ausencia de Cabeceras HTTP de Seguridad (Hardening)**
   - **Ubicación en Código:** [main.rs](src/main.rs#L130-L190) (inicialización del router Axum).
   - **Detalle Técnico:** No se configuran políticas de Content Security Policy (CSP), HTTP Strict Transport Security (HSTS) ni protección contra Clickjacking en las respuestas HTTP de Axum.
   - **Vector de Ataque:** Vulnerabilidad a ataques XSS mediante inserción de scripts JavaScript no autorizados y ataques man-in-the-middle por falta de SSL forzado.
@@ -124,24 +124,24 @@ _Objetivo: Mitigar las brechas de suplantación, no-repudio y fuga de datos pers
 
 ### 🛠️ Tareas de Mitigación y Desarrollo V1
 
-- [ ] **Autenticación con Argon2id (Login Real):**
+- [x] **Autenticación con Argon2id (Login Real):**
   - Reemplazar el simulador de operadores por un portal de autenticación real.
   - Implementar hashing de contraseñas robusto con el algoritmo **Argon2id** (usando parámetros de memoria estrictos: `m_cost = 65536` o 64MB, `t_cost = 3`, `p_cost = 4`) para mitigar ataques de diccionario y fuerza bruta a nivel local o de red.
-- [ ] **Sesiones Cifradas en el Servidor (`PrivateCookieJar`):**
+- [x] **Sesiones Cifradas en el Servidor (`PrivateCookieJar`):**
   - Configurar **`axum-extra::extract::PrivateCookieJar`** para cifrar y firmar criptográficamente la sesión en tránsito usando una clave maestra simétrica.
   - Evitar que el cliente pueda alterar o inyectar localmente el ID del operador en la cookie, impidiendo la evasión de políticas ABAC.
-- [ ] **Application-Level Encryption (ALE) para PII Militar:**
+- [x] **Application-Level Encryption (ALE) para PII Militar:**
   - Cifrar en origen las columnas confidenciales (`nombre`, `apellido_paterno`, `apellido_materno`, `matricula` en la tabla `soldados`, y números de serie de armamento sensible) antes de persistirse en SQLite/Turso.
   - Utilizar algoritmos criptográficos autenticados estándar como **ChaCha20-Poly1305** o **AES-256-GCM**.
   - Evitar fugas en memoria de datos sin cifrar usando el wrapper **`SecretString`** (del crate `secrecy`) para forzar la zeroización en la pila del sistema tras su uso.
-- [ ] **Cadena de Custodia Inmutable (Hash-Chain SHA-256):**
+- [x] **Cadena de Custodia Inmutable (Hash-Chain BLAKE3):**
   - Rediseñar la bitácora de asignaciones y devoluciones como un libro mayor append-only.
   - Cada inserción debe calcular un hash criptográfico **`SHA-256`** que concatene los datos del registro actual con el hash del registro anterior (`hash_actual = SHA-256(registro_actual || hash_anterior)`), almacenándolo en la columna `hash_verificacion`.
   - Proveer un validador de integridad asíncrono para alertar ante alteraciones maliciosas directas a nivel de base de datos.
-- [ ] **Políticas de Hardening de Red en Axum (CSP/HSTS):**
+- [x] **Políticas de Hardening de Red en Axum (CSP/HSTS):**
   - Implementar middlewares de Axum para forzar cabeceras de seguridad estrictas:
     - **Content Security Policy (CSP):** `default-src 'self'` para anular inyecciones XSS externas y prohibir JS de terceros.
     - **HTTP Strict Transport Security (HSTS):** `max-age=63072000` con `includeSubDomains` para forzar conexiones HTTPS.
     - Cabeceras secundarias: `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, y `Permissions-Policy`.
-- [ ] **Sanitización de Observabilidad (Logs Libres de PII):**
+- [x] **Sanitización de Observabilidad (Logs Libres de PII):**
   - Configurar filtros personalizados en `tracing-subscriber` para ofuscar o hashear irreversiblemente matrículas y apellidos en la salida estándar de logs JSON, evitando su persistencia en recolectores de logs externos.

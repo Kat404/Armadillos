@@ -30,7 +30,7 @@ pub async fn pagina_index(Extension(csrf_token): Extension<CsrfToken>) -> Markup
                             "Es sumamente veloz, eficiente en memoria y sobresaliente en seguridad."
                         }
                         nav class="medium-margin" style="gap: 16px;" {
-                            a href="/soldiers" class="button round primary" {
+                            a href="/soldados" class="button round primary" {
                                 i { "shield" }
                                 span { "Gestionar Personal" }
                             }

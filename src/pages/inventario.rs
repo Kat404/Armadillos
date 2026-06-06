@@ -7,7 +7,7 @@ use axum::{
     Extension, Form,
     extract::Query,
     extract::State,
-    http::{HeaderMap, StatusCode},
+    http::StatusCode,
     response::{IntoResponse, Response},
 };
 use maud::{Markup, html};
@@ -26,20 +26,35 @@ async fn obtener_soldados_opciones(state: &AppState) -> Result<Vec<SoldadoOpcion
     let conn = state.db.connect().map_err(|e| e.to_string())?;
     let mut rows = conn
         .query(
-            "SELECT s.id, s.nombre, s.apellido_paterno, r.nombre
+            "SELECT s.id, s.nombre_encriptado, s.apellido_paterno_encriptado, r.nombre
              FROM soldados s
              JOIN rangos r ON s.rango_id = r.id
-             ORDER BY r.orden_jerarquico DESC, s.nombre ASC",
+             ORDER BY r.orden_jerarquico DESC",
             (),
         )
         .await
         .map_err(|e| e.to_string())?;
     let mut lista = Vec::new();
+    let ale_key = crate::crypto::obtener_ale_key();
+    use secrecy::ExposeSecret;
+
     while let Some(row) = rows.next().await.map_err(|e| e.to_string())? {
+        let nombre_enc: String = row.get(1).map_err(|e| e.to_string())?;
+        let apellido_enc: String = row.get(2).map_err(|e| e.to_string())?;
+
+        let nombre = crate::crypto::desencriptar_pii(&nombre_enc, &ale_key)
+            .map_err(|e| format!("Error descifrando nombre opcion: {}", e))?
+            .expose_secret()
+            .to_string();
+        let apellido = crate::crypto::desencriptar_pii(&apellido_enc, &ale_key)
+            .map_err(|e| format!("Error descifrando apellido opcion: {}", e))?
+            .expose_secret()
+            .to_string();
+
         lista.push(SoldadoOpcion {
             id: row.get(0).map_err(|e| e.to_string())?,
-            nombre: row.get(1).map_err(|e| e.to_string())?,
-            apellido: row.get(2).map_err(|e| e.to_string())?,
+            nombre,
+            apellido,
             rango_nombre: row.get(3).map_err(|e| e.to_string())?,
         });
     }
@@ -141,31 +156,17 @@ pub struct FiltroInventario {
 /// Renders the inner content of the inventory page, which can be swapped asynchronously by HTMX.
 async fn render_fragmento_inventario(
     state: &AppState,
-    headers: &HeaderMap,
+    jar: &axum_extra::extract::PrivateCookieJar,
     csrf_token: &str,
     categoria_id_opt: Option<i64>,
     alerta_markup: Option<Markup>,
 ) -> Markup {
-    let operador = resolver_operador_activo(headers, state)
-        .await
-        .unwrap_or(None);
-    let todos_soldados = obtener_soldados_opciones(state).await.unwrap_or_default();
+    let operador = resolver_operador_activo(jar, state).await.unwrap_or(None);
     let categorias = obtener_categorias(state).await.unwrap_or_default();
     let inventario = obtener_equipamiento(state, categoria_id_opt)
         .await
         .unwrap_or_default();
 
-    let soldados_tuple: Vec<(i64, String)> = todos_soldados
-        .iter()
-        .map(|s| {
-            (
-                s.id,
-                format!("{} — {} {}", s.rango_nombre, s.nombre, s.apellido),
-            )
-        })
-        .collect();
-
-    let op_id = operador.as_ref().map(|o| o.id);
     let op_nombre = operador.as_ref().map(|o| o.nombre_completo.clone());
     let op_rango = operador.as_ref().map(|o| o.rango_nombre.clone());
     let op_seccion = operador.as_ref().map(|o| o.seccion_nombre.clone());
@@ -176,15 +177,11 @@ async fn render_fragmento_inventario(
 
     html! {
         div id="seccion-inventario-completo" {
-            // 1. Selector de Operador (Simulador ABAC componentizado)
-            (crate::components::operador::selector_operador(
-                op_id,
-                op_nombre,
-                op_rango,
-                op_seccion,
+            (crate::components::operador::info_operador(
+                op_nombre.as_deref(),
+                op_rango.as_deref(),
+                op_seccion.as_deref(),
                 puede_belico,
-                &soldados_tuple,
-                "/inventario",
             ))
 
             // 2. Banner de alertas inyectado dinámicamente si existe
@@ -344,9 +341,14 @@ async fn render_fragmento_inventario(
 pub async fn pagina_inventario(
     State(state): State<AppState>,
     Extension(csrf_token): Extension<CsrfToken>,
-    headers: HeaderMap,
+    jar: axum_extra::extract::PrivateCookieJar,
     Query(filtro): Query<FiltroInventario>,
-) -> Markup {
+) -> impl axum::response::IntoResponse {
+    use axum::response::Redirect;
+    if jar.get("operador_soldado_id").is_none() {
+        return Redirect::to("/login").into_response();
+    }
+
     let ctx = PageContext::new(
         "Armadillos - Inventario Militar",
         "Inventario y Equipamiento",
@@ -355,10 +357,9 @@ pub async fn pagina_inventario(
     );
 
     let fragmento =
-        render_fragmento_inventario(&state, &headers, &csrf_token.0, filtro.categoria_id, None)
-            .await;
+        render_fragmento_inventario(&state, &jar, &csrf_token.0, filtro.categoria_id, None).await;
 
-    layout(&ctx, fragmento)
+    layout(&ctx, fragmento).into_response()
 }
 
 /// Estructura que captura los datos enviados para registrar un equipamiento.
@@ -376,26 +377,21 @@ pub struct NuevoEquipamiento {
 pub async fn agregar_equipamiento(
     State(state): State<AppState>,
     Extension(csrf_token): Extension<CsrfToken>,
-    headers: HeaderMap,
+    jar: axum_extra::extract::PrivateCookieJar,
     Form(payload): Form<NuevoEquipamiento>,
 ) -> Response {
     // 1. Resolver el Operador Activo
-    let operador = match resolver_operador_activo(&headers, &state).await {
+    let operador = match resolver_operador_activo(&jar, &state).await {
         Ok(Some(op)) => op,
         _ => {
             let error_html = crate::components::alerta::alerta(
                 "error",
-                "Simulación Inválida",
-                "No hay un operador simulado activo o válido.",
+                "Sesión Inválida",
+                "No hay una sesión de operador activa o válida.",
             );
-            let fragmento = render_fragmento_inventario(
-                &state,
-                &headers,
-                &csrf_token.0,
-                None,
-                Some(error_html),
-            )
-            .await;
+            let fragmento =
+                render_fragmento_inventario(&state, &jar, &csrf_token.0, None, Some(error_html))
+                    .await;
             return (StatusCode::FORBIDDEN, fragmento).into_response();
         }
     };
@@ -406,14 +402,9 @@ pub async fn agregar_equipamiento(
         Err(e) => {
             let error_html =
                 crate::components::alerta::alerta("error", "Fallo de Conexión", &e.to_string());
-            let fragmento = render_fragmento_inventario(
-                &state,
-                &headers,
-                &csrf_token.0,
-                None,
-                Some(error_html),
-            )
-            .await;
+            let fragmento =
+                render_fragmento_inventario(&state, &jar, &csrf_token.0, None, Some(error_html))
+                    .await;
             return (StatusCode::INTERNAL_SERVER_ERROR, fragmento).into_response();
         }
     };
@@ -429,14 +420,9 @@ pub async fn agregar_equipamiento(
         Err(e) => {
             let error_html =
                 crate::components::alerta::alerta("error", "Error de Consulta", &e.to_string());
-            let fragmento = render_fragmento_inventario(
-                &state,
-                &headers,
-                &csrf_token.0,
-                None,
-                Some(error_html),
-            )
-            .await;
+            let fragmento =
+                render_fragmento_inventario(&state, &jar, &csrf_token.0, None, Some(error_html))
+                    .await;
             return (StatusCode::INTERNAL_SERVER_ERROR, fragmento).into_response();
         }
     };
@@ -452,7 +438,7 @@ pub async fn agregar_equipamiento(
     // 3. Evaluar la política ABAC si es Material de Guerra
     if es_material_de_guerra && !operador.contexto.puede_administrar_inventario_belico() {
         tracing::warn!(
-            operador = %operador.nombre_completo,
+            operador_id = %operador.id,
             rango = %operador.rango_nombre,
             "Intento bloqueado por ABAC: usuario no autorizado intentó registrar material de guerra"
         );
@@ -463,8 +449,7 @@ pub async fn agregar_equipamiento(
         let error_html =
             crate::components::alerta::alerta("error", "PERMISO DENEGADO (ABAC)", &error_msg);
         let fragmento =
-            render_fragmento_inventario(&state, &headers, &csrf_token.0, None, Some(error_html))
-                .await;
+            render_fragmento_inventario(&state, &jar, &csrf_token.0, None, Some(error_html)).await;
         return (StatusCode::FORBIDDEN, fragmento).into_response();
     }
 
@@ -493,17 +478,17 @@ pub async fn agregar_equipamiento(
     {
         Ok(_) => {
             tracing::info!(
-                operador = %operador.nombre_completo,
+                operador_id = %operador.id,
                 "Equipamiento registrado con éxito en el inventario"
             );
             // Éxito: retornamos la vista parcial limpia
             let exito_html = crate::components::alerta::alerta("success", "Registro Exitoso", "El nuevo equipamiento ha sido incorporado al inventario con éxito.");
-            let fragmento = render_fragmento_inventario(&state, &headers, &csrf_token.0, None, Some(exito_html)).await;
+            let fragmento = render_fragmento_inventario(&state, &jar, &csrf_token.0, None, Some(exito_html)).await;
             fragmento.into_response()
         }
         Err(e) => {
             let error_html = crate::components::alerta::alerta("error", "Error de Inserción SQL", &e.to_string());
-            let fragmento = render_fragmento_inventario(&state, &headers, &csrf_token.0, None, Some(error_html)).await;
+            let fragmento = render_fragmento_inventario(&state, &jar, &csrf_token.0, None, Some(error_html)).await;
             (StatusCode::INTERNAL_SERVER_ERROR, fragmento).into_response()
         }
     }

@@ -53,20 +53,22 @@ CREATE TABLE IF NOT EXISTS secciones_servicios (
 -- TABLA: soldados
 -- Registro de personal militar. Vincula al rango y sección
 -- mediante claves foráneas, eliminando dependencias transitivas.
--- La 'matricula' es la clave natural de negocio (UNIQUE).
+-- La matrícula original se encripta y se indexa mediante 'matricula_blind_index'.
 -- ============================================================
 CREATE TABLE IF NOT EXISTS soldados (
-    id                      INTEGER PRIMARY KEY AUTOINCREMENT,
-    matricula               TEXT    NOT NULL UNIQUE,
-    nombre                  TEXT    NOT NULL,
-    apellido_paterno        TEXT    NOT NULL,
-    apellido_materno        TEXT,
-    rango_id                INTEGER NOT NULL,
-    seccion_servicio_id     INTEGER NOT NULL,
-    estado                  TEXT    NOT NULL DEFAULT 'Activo',
+    id                          INTEGER PRIMARY KEY AUTOINCREMENT,
+    matricula_blind_index       TEXT    NOT NULL UNIQUE,
+    matricula_encriptada        TEXT    NOT NULL,
+    nombre_encriptado           TEXT    NOT NULL,
+    apellido_paterno_encriptado TEXT    NOT NULL,
+    apellido_materno_encriptado TEXT,
+    rango_id                    INTEGER NOT NULL,
+    seccion_servicio_id         INTEGER NOT NULL,
+    estado                      TEXT    NOT NULL DEFAULT 'Activo',
     FOREIGN KEY (rango_id)            REFERENCES rangos(id),
     FOREIGN KEY (seccion_servicio_id)  REFERENCES secciones_servicios(id)
 );
+
 
 -- ============================================================
 -- TABLA: categorias_equipamiento
@@ -99,22 +101,39 @@ CREATE TABLE IF NOT EXISTS equipamiento (
 );
 
 -- ============================================================
--- TABLA: asignaciones_equipamiento
--- Registro de la cadena de custodia: quién recibió qué equipo,
--- en qué cantidad, cuándo, y quién lo autorizó.
--- 'fecha_devolucion' es NULL mientras el equipo esté asignado.
+-- TABLA: asignaciones_equipamiento (LEDGER APPEND-ONLY)
+-- Libro mayor inmutable de la cadena de custodia: cada evento
+-- (ASIGNACION o DEVOLUCION) se registra como un INSERT.
+-- Nunca se realizan UPDATE ni DELETE sobre esta tabla.
+-- 'hash_verificacion' encadena criptográficamente cada registro
+-- al anterior mediante BLAKE3 para garantizar no-repudio.
 -- ============================================================
 CREATE TABLE IF NOT EXISTS asignaciones_equipamiento (
     id                          INTEGER PRIMARY KEY AUTOINCREMENT,
+    tipo_evento                 TEXT    NOT NULL,
     soldado_id                  INTEGER NOT NULL,
     equipamiento_id             INTEGER NOT NULL,
     cantidad                    INTEGER NOT NULL DEFAULT 1,
-    fecha_asignacion            TEXT    NOT NULL DEFAULT (datetime('now')),
-    fecha_devolucion            TEXT,
+    fecha_evento                TEXT    NOT NULL DEFAULT (datetime('now')),
     autorizado_por_soldado_id   INTEGER NOT NULL,
+    asignacion_origen_id        INTEGER,
+    hash_verificacion           TEXT    NOT NULL,
     FOREIGN KEY (soldado_id)                REFERENCES soldados(id),
     FOREIGN KEY (equipamiento_id)           REFERENCES equipamiento(id),
-    FOREIGN KEY (autorizado_por_soldado_id) REFERENCES soldados(id)
+    FOREIGN KEY (autorizado_por_soldado_id) REFERENCES soldados(id),
+    FOREIGN KEY (asignacion_origen_id)      REFERENCES asignaciones_equipamiento(id)
+);
+
+-- ============================================================
+-- TABLA: credenciales_soldados
+-- Almacena las contraseñas hasheadas y nombres de usuario para
+-- el acceso autenticado del personal.
+-- ============================================================
+CREATE TABLE IF NOT EXISTS credenciales_soldados (
+    soldado_id      INTEGER PRIMARY KEY,
+    usuario         TEXT    NOT NULL UNIQUE,
+    password_hash   TEXT    NOT NULL,
+    FOREIGN KEY (soldado_id) REFERENCES soldados(id) ON DELETE CASCADE
 );
 ";
 
@@ -222,6 +241,141 @@ INSERT OR IGNORE INTO equipamiento (codigo_inventario, nombre, descripcion, cate
     ('SUP-002', 'Tienda de Campaña 4 Plazas',     'Tienda militar de campaña para 4 elementos.',                                      7, 'Operativo', 60,  60);
 ";
 
+/// Inicializa la tabla soldados con datos semilla cifrados a nivel de aplicación (ALE).
+pub async fn inicializar_soldados_semilla(conn: &Connection) -> Result<(), String> {
+    // Verificar si ya hay soldados registrados
+    let mut rows = conn
+        .query("SELECT COUNT(*) FROM soldados", ())
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let count: i64 = if let Some(row) = rows.next().await.map_err(|e| e.to_string())? {
+        row.get(0).map_err(|e| e.to_string())?
+    } else {
+        0
+    };
+
+    if count == 0 {
+        let key = crate::crypto::obtener_ale_key();
+
+        struct SoldadoSemillaRaw<'a> {
+            id: i64,
+            matricula: &'a str,
+            nombre: &'a str,
+            apellido_paterno: &'a str,
+            apellido_materno: Option<&'a str>,
+            rango_id: i64,
+            seccion_servicio_id: i64,
+            estado: &'a str,
+        }
+
+        let soldados_semilla = [
+            SoldadoSemillaRaw {
+                id: 1,
+                matricula: "M-2309401",
+                nombre: "Santiago",
+                apellido_paterno: "Mendoza",
+                apellido_materno: None,
+                rango_id: 6,
+                seccion_servicio_id: 1,
+                estado: "Activo",
+            },
+            SoldadoSemillaRaw {
+                id: 2,
+                matricula: "M-2309402",
+                nombre: "Mateo",
+                apellido_paterno: "Guerrero",
+                apellido_materno: None,
+                rango_id: 4,
+                seccion_servicio_id: 6,
+                estado: "Activo",
+            },
+            SoldadoSemillaRaw {
+                id: 3,
+                matricula: "M-2309403",
+                nombre: "Sebastián",
+                apellido_paterno: "Ortega",
+                apellido_materno: None,
+                rango_id: 3,
+                seccion_servicio_id: 2,
+                estado: "Activo",
+            },
+        ];
+
+        let mut sql = String::new();
+        for s in &soldados_semilla {
+            let blind_index = crate::crypto::calcular_blind_index(s.matricula, &key);
+            let matricula_enc = crate::crypto::encriptar_pii(s.matricula, &key)?;
+            let nombre_enc = crate::crypto::encriptar_pii(s.nombre, &key)?;
+            let apellido_p_enc = crate::crypto::encriptar_pii(s.apellido_paterno, &key)?;
+            let apellido_m_enc_str = match s.apellido_materno {
+                Some(ap) => format!("'{}'", crate::crypto::encriptar_pii(ap, &key)?),
+                None => "NULL".to_string(),
+            };
+
+            sql.push_str(&format!(
+                "INSERT INTO soldados (id, matricula_blind_index, matricula_encriptada, nombre_encriptado, apellido_paterno_encriptado, apellido_materno_encriptado, rango_id, seccion_servicio_id, estado)
+                 VALUES ({}, '{}', '{}', '{}', '{}', {}, {}, {}, '{}');\n",
+                s.id, blind_index, matricula_enc, nombre_enc, apellido_p_enc, apellido_m_enc_str, s.rango_id, s.seccion_servicio_id, s.estado
+            ));
+        }
+
+        conn.execute_batch(&sql)
+            .await
+            .map_err(|e| format!("Error ejecutando batch de soldados semilla: {}", e))?;
+
+        tracing::info!("Soldados semilla inicializados exitosamente con ALE.");
+    }
+    Ok(())
+}
+
+pub async fn inicializar_credenciales_semilla(conn: &Connection) -> Result<(), String> {
+    use argon2::{
+        Argon2,
+        password_hash::{PasswordHasher, SaltString, rand_core::OsRng},
+    };
+
+    // Verificar si ya hay credenciales registradas
+    let mut rows = conn
+        .query("SELECT COUNT(*) FROM credenciales_soldados", ())
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let count: i64 = if let Some(row) = rows.next().await.map_err(|e| e.to_string())? {
+        row.get(0).map_err(|e| e.to_string())?
+    } else {
+        0
+    };
+
+    if count == 0 {
+        let argon2 = Argon2::default();
+
+        let usuarios_semilla = [
+            (1, "subteniente.mendoza", "Mendoza2026!"),
+            (2, "sargento.guerrero", "Guerrero2026!"),
+            (3, "cabo.ortega", "Ortega2026!"),
+        ];
+
+        for (soldado_id, usuario, password_plana) in &usuarios_semilla {
+            let salt = SaltString::generate(&mut OsRng);
+            let password_hash = argon2
+                .hash_password(password_plana.as_bytes(), &salt)
+                .map_err(|e| format!("Error al hashear contraseña con Argon2id: {}", e))?
+                .to_string();
+
+            conn.execute(
+                "INSERT INTO credenciales_soldados (soldado_id, usuario, password_hash) VALUES (?1, ?2, ?3)",
+                (*soldado_id, *usuario, password_hash),
+            )
+            .await
+            .map_err(|e| e.to_string())?;
+        }
+        tracing::info!("Credenciales semilla creadas exitosamente.");
+    }
+
+    Ok(())
+}
+
 /// Ejecuta todas las migraciones de esquema y datos semilla.
 ///
 /// Utiliza `execute_batch` de TursoDB/libsql para ejecutar todas las
@@ -229,29 +383,71 @@ INSERT OR IGNORE INTO equipamiento (codigo_inventario, nombre, descripcion, cate
 /// si cualquier sentencia falla, toda la migración se revierte.
 ///
 /// # Errores
-/// Retorna el error de la base de datos si alguna sentencia falla.
-pub async fn ejecutar_migraciones(conn: &Connection) -> Result<(), turso::Error> {
+/// Retorna un error en formato de cadena si alguna sentencia o inicialización falla.
+pub async fn ejecutar_migraciones(conn: &Connection) -> Result<(), String> {
     tracing::info!("Ejecutando migraciones de esquema de base de datos...");
 
     // Activar claves foráneas (desactivadas por defecto en SQLite)
-    conn.execute("PRAGMA foreign_keys = ON;", ()).await?;
+    // PRAGMA foreign_keys = ON debe ejecutarse FUERA de una transacción.
+    conn.execute("PRAGMA foreign_keys = ON;", ())
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // Iniciar transacción explícita
+    conn.execute("BEGIN TRANSACTION", ())
+        .await
+        .map_err(|e| format!("Error al iniciar transacción de migración: {}", e))?;
 
     // Crear tablas (DDL)
-    conn.execute_batch(SCHEMA_SQL).await?;
+    if let Err(e) = conn.execute_batch(SCHEMA_SQL).await {
+        let _ = conn.execute("ROLLBACK", ()).await;
+        return Err(format!("Error en SCHEMA_SQL: {}", e));
+    }
     tracing::info!("Esquema de tablas creado correctamente.");
 
     // Insertar datos semilla
-    conn.execute_batch(SEED_RANGOS_SQL).await?;
+    if let Err(e) = conn.execute_batch(SEED_RANGOS_SQL).await {
+        let _ = conn.execute("ROLLBACK", ()).await;
+        return Err(format!("Error en SEED_RANGOS_SQL: {}", e));
+    }
     tracing::info!("Datos semilla de rangos militares insertados.");
 
-    conn.execute_batch(SEED_SECCIONES_SQL).await?;
+    if let Err(e) = conn.execute_batch(SEED_SECCIONES_SQL).await {
+        let _ = conn.execute("ROLLBACK", ()).await;
+        return Err(format!("Error en SEED_SECCIONES_SQL: {}", e));
+    }
     tracing::info!("Datos semilla de secciones y servicios insertados.");
 
-    conn.execute_batch(SEED_CATEGORIAS_SQL).await?;
+    if let Err(e) = conn.execute_batch(SEED_CATEGORIAS_SQL).await {
+        let _ = conn.execute("ROLLBACK", ()).await;
+        return Err(format!("Error en SEED_CATEGORIAS_SQL: {}", e));
+    }
     tracing::info!("Datos semilla de categorías de equipamiento insertadas.");
 
-    conn.execute_batch(SEED_EQUIPAMIENTO_SQL).await?;
+    if let Err(e) = conn.execute_batch(SEED_EQUIPAMIENTO_SQL).await {
+        let _ = conn.execute("ROLLBACK", ()).await;
+        return Err(format!("Error en SEED_EQUIPAMIENTO_SQL: {}", e));
+    }
     tracing::info!("Datos semilla de equipamiento insertados.");
+
+    if let Err(e) = inicializar_soldados_semilla(conn).await {
+        let _ = conn.execute("ROLLBACK", ()).await;
+        return Err(format!("Error en inicializar_soldados_semilla: {}", e));
+    }
+    tracing::info!("Datos semilla de soldados insertados con ALE.");
+
+    if let Err(e) = inicializar_credenciales_semilla(conn).await {
+        let _ = conn.execute("ROLLBACK", ()).await;
+        return Err(format!("Error en inicializar_credenciales_semilla: {}", e));
+    }
+
+    if let Err(e) = conn.execute("COMMIT", ()).await {
+        let _ = conn.execute("ROLLBACK", ()).await;
+        return Err(format!(
+            "Error al confirmar transacción de migración: {}",
+            e
+        ));
+    }
 
     tracing::info!("Todas las migraciones ejecutadas exitosamente.");
     Ok(())
@@ -323,5 +519,19 @@ mod tests {
             SEED_EQUIPAMIENTO_SQL.contains("Morelos"),
             "Falta el Fusil de Precisión Morelos (fabricación DGIM)"
         );
+    }
+
+    #[tokio::test]
+    async fn test_ejecutar_migraciones_completo() {
+        let db = turso::Builder::new_local(":memory:").build().await.unwrap();
+        let conn = db.connect().unwrap();
+        ejecutar_migraciones(&conn).await.unwrap();
+
+        let mut rows = conn
+            .query("SELECT COUNT(*) FROM soldados", ())
+            .await
+            .unwrap();
+        let count: i64 = rows.next().await.unwrap().unwrap().get(0).unwrap();
+        assert_eq!(count, 3);
     }
 }

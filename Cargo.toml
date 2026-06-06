@@ -15,7 +15,7 @@ tokio = { version = "1.52.2", features = ["full"] }
 maud = { version = "0.27.0", features = ["axum"] }
 
 # Los servicios: Manejo de archivos estáticos (CSS/JS) y logs
-tower-http = { version = "0.6.10", features = ["fs", "trace"] }
+tower-http = { version = "0.6.10", features = ["fs", "trace", "set-header"] }
 
 # Los datos: Serialización básica
 serde = { version = "1.0.228", features = ["derive"] }
@@ -30,5 +30,15 @@ turso = "0.6.1"
 # Generación de números y tokens aleatorios seguros (CSRF)
 rand = "0.8.6"
 
+# Criptografía y Seguridad para v1-stable
+argon2 = "0.5.3"
+axum-extra = { version = "0.12.6", features = ["cookie", "cookie-private"] }
+cookie = { version = "0.18", features = ["private"] }
+hex = "0.4.3"
+blake3 = "1.5.4"
+secrecy = { version = "0.10.3", features = ["serde"] }
+chacha20poly1305 = "0.10.1"
+
 [dev-dependencies]
 tower = { version = "0.5.2", features = ["util"] }
+

@@ -1,15 +1,20 @@
 mod components; // Declaramos módulo de componentes/
+mod crypto;
 mod db; // Módulo de base de datos (migraciones y esquema)
 mod domain; // Módulo para tipos seguros de dominio militar
 mod layouts; // Declaramos módulo raíz de los layouts/
 mod pages; // Declaramos módulo raíz de las pages/
-mod security; // Módulo de seguridad (CSRF)
+mod security; // Módulo de seguridad (CSRF) // Módulo de criptografía (ALE)
+
 use axum::{Router, routing::get};
 use pages::about::pagina_about; // Importamos la página Acerca de
-use pages::asignaciones::{crear_asignacion, devolver_asignacion, pagina_asignaciones};
+use pages::asignaciones::{
+    auditar_bitacora, crear_asignacion, devolver_asignacion, pagina_asignaciones,
+};
 use pages::index::pagina_index; // Importamos página principal (index)
 use pages::inventario::{agregar_equipamiento, pagina_inventario};
-use pages::soldados::{agregar_soldado, pagina_soldados, simular_operador}; // Módulo CRUD para soldados
+use pages::login::{logout, pagina_login, procesar_login}; // Módulo de autenticación
+use pages::soldados::{agregar_soldado, pagina_soldados}; // Módulo CRUD para soldados
 use std::sync::Arc;
 use tower_http::services::ServeDir;
 
@@ -20,6 +25,13 @@ use maud::Markup;
 #[derive(Clone)]
 pub struct AppState {
     pub db: Arc<turso::Database>,
+    pub session_key: axum_extra::extract::cookie::Key,
+}
+
+impl axum::extract::FromRef<AppState> for axum_extra::extract::cookie::Key {
+    fn from_ref(state: &AppState) -> Self {
+        state.session_key.clone()
+    }
 }
 
 pub struct HtmlTemplate(pub Markup);
@@ -60,6 +72,31 @@ fn load_db_key() -> String {
     }
 }
 
+fn load_session_key() -> axum_extra::extract::cookie::Key {
+    use axum_extra::extract::cookie::Key;
+    match std::env::var("SESSION_KEY") {
+        Ok(val) => {
+            if let Some(key) = hex::decode(val.trim())
+                .ok()
+                .and_then(|bytes| Key::try_from(&bytes[..]).ok())
+            {
+                tracing::info!("Clave de sesión cargada exitosamente desde SESSION_KEY.");
+                return key;
+            }
+            tracing::warn!(
+                "La variable SESSION_KEY no contiene una clave válida en hex de 64 bytes. Generando una temporal..."
+            );
+            Key::generate()
+        }
+        Err(_) => {
+            tracing::warn!(
+                "Variable SESSION_KEY no encontrada. Generando una clave temporal de sesión para desarrollo."
+            );
+            Key::generate()
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() {
     // Inicializar logs para ver qué pasa internamente
@@ -94,9 +131,13 @@ async fn main() {
         .await
         .expect("Error crítico al ejecutar migraciones de base de datos");
 
+    // Obtener la clave de sesión
+    let session_key = load_session_key();
+
     // Empaquetar la BD en el estado de la aplicación
     let state = AppState {
         db: Arc::new(database),
+        session_key,
     };
 
     let app = crear_app(state);
@@ -111,6 +152,8 @@ async fn main() {
 
     axum::serve(listener, app).await.unwrap();
 }
+
+use tower_http::set_header::SetResponseHeaderLayer;
 
 /// Construye e inicializa el enrutador de Axum de la aplicación.
 pub fn crear_app(state: AppState) -> Router {
@@ -130,12 +173,32 @@ pub fn crear_app(state: AppState) -> Router {
             "/asignaciones/devolver",
             axum::routing::post(devolver_asignacion),
         )
-        .route("/simular_operador", axum::routing::post(simular_operador))
+        .route("/asignaciones/auditoria", get(auditar_bitacora))
+        .route("/login", get(pagina_login).post(procesar_login))
+        .route("/logout", axum::routing::post(logout))
         .layer(axum::middleware::from_fn(security::csrf_middleware));
 
     Router::new()
         .merge(routes)
         .nest_service("/assets", ServeDir::new("assets"))
+        // --- MIDDLEWARES GLOBALES DE SEGURIDAD (VULN-05 Hardening) ---
+        // CSP Estricto: Sólo permitir recursos propios e inline styles genéricos
+        .layer(SetResponseHeaderLayer::overriding(
+            header::CONTENT_SECURITY_POLICY,
+            header::HeaderValue::from_static(
+                "default-src 'self'; style-src 'self' 'unsafe-inline'",
+            ),
+        ))
+        // HSTS (HTTP Strict Transport Security): Forzar HTTPS por 2 años, cubriendo subdominios
+        .layer(SetResponseHeaderLayer::overriding(
+            header::STRICT_TRANSPORT_SECURITY,
+            header::HeaderValue::from_static("max-age=63072000; includeSubDomains"),
+        ))
+        // X-Frame-Options: Bloquear que Armadillos sea embebido en un iFrame en otros dominios (prevención Clickjacking)
+        .layer(SetResponseHeaderLayer::overriding(
+            header::X_FRAME_OPTIONS,
+            header::HeaderValue::from_static("DENY"),
+        ))
         .with_state(state)
 }
 
@@ -171,22 +234,23 @@ mod tests_integracion {
             .await
             .unwrap();
 
-        // Insertar soldados de prueba para la evaluación de políticas ABAC
-        conn.execute(
-            "INSERT INTO soldados (id, matricula, nombre, apellido_paterno, rango_id, seccion_servicio_id, estado) VALUES
-             (1, 'M-2309401', 'Santiago', 'Mendoza', 6, 1, 'Activo'),
-             (2, 'M-2309402', 'Mateo',    'Guerrero', 4, 6, 'Activo'),
-             (3, 'M-2309403', 'Sebastián','Ortega',   3, 2, 'Activo')",
-            (),
-        )
-        .await
-        .unwrap();
-
         // Insertar asignación semilla de prueba (ID 1: asignación de 2 fusiles FX-05 al soldado 3, autorizado por 1)
+        // Calculamos el hash-chain con hash génesis para consistencia
+        let fecha_test = "2026-01-01 00:00:00";
+        let hash_semilla = crate::security::calcular_hash_evento(
+            "ASIGNACION",
+            3,
+            1,
+            2,
+            fecha_test,
+            1,
+            None,
+            crate::security::HASH_GENESIS,
+        );
         conn.execute(
-            "INSERT INTO asignaciones_equipamiento (id, soldado_id, equipamiento_id, cantidad, autorizado_por_soldado_id) VALUES
-             (1, 3, 1, 2, 1)",
-            (),
+            "INSERT INTO asignaciones_equipamiento (id, tipo_evento, soldado_id, equipamiento_id, cantidad, fecha_evento, autorizado_por_soldado_id, hash_verificacion) VALUES
+             (1, 'ASIGNACION', 3, 1, 2, ?1, 1, ?2)",
+            (fecha_test, hash_semilla),
         )
         .await
         .unwrap();
@@ -201,6 +265,7 @@ mod tests_integracion {
 
         AppState {
             db: Arc::new(database),
+            session_key: axum_extra::extract::cookie::Key::generate(),
         }
     }
 
@@ -211,14 +276,50 @@ mod tests_integracion {
         let _ = std::fs::remove_file(format!("{}-wal", db_path));
     }
 
+    fn crear_cookie_encriptada(state: &AppState, name: &str, value: &str) -> String {
+        use cookie::{Cookie, CookieJar};
+        let mut jar = CookieJar::new();
+        jar.private_mut(&state.session_key)
+            .add(Cookie::new(name.to_string(), value.to_string()));
+        let cookie = jar.get(name).unwrap();
+        cookie.to_string()
+    }
+
     #[tokio::test]
-    async fn test_get_inventario_redirige_a_operador_defecto() {
-        let nombre_test = "test_get_inv";
+    async fn test_get_inventario_redirige_a_login() {
+        let nombre_test = "test_get_inv_redir";
         let state = configurar_db_pruebas(nombre_test).await;
         let app = crear_app(state);
 
         let req = Request::builder()
             .uri("/inventario")
+            .body(Body::empty())
+            .unwrap();
+
+        let response = app.oneshot(req).await.unwrap();
+        assert_eq!(response.status(), StatusCode::SEE_OTHER);
+        assert_eq!(
+            response
+                .headers()
+                .get("location")
+                .unwrap()
+                .to_str()
+                .unwrap(),
+            "/login"
+        );
+        limpiar_db_pruebas(nombre_test);
+    }
+
+    #[tokio::test]
+    async fn test_get_inventario_con_sesion_ok() {
+        let nombre_test = "test_get_inv_ok";
+        let state = configurar_db_pruebas(nombre_test).await;
+        let app = crear_app(state.clone());
+
+        let cookie_str = crear_cookie_encriptada(&state, "operador_soldado_id", "3");
+        let req = Request::builder()
+            .uri("/inventario")
+            .header("Cookie", cookie_str)
             .body(Body::empty())
             .unwrap();
 
@@ -231,19 +332,17 @@ mod tests_integracion {
     async fn test_post_inventario_bloqueado_si_no_es_operador_autorizado() {
         let nombre_test = "test_post_inv_bloqueado";
         let state = configurar_db_pruebas(nombre_test).await;
-        let app = crear_app(state);
+        let app = crear_app(state.clone());
 
         // Intentamos agregar un Fusil FX-05 (categoria_id = 1) con operador_soldado_id = 3 (Cabo Infantería)
         let form_data = "codigo_inventario=ARM-999&nombre=Fusil+Test&categoria_id=1&estado_conservacion=Operativo&stock_total=10";
 
+        let cookie_str = crear_cookie_encriptada(&state, "operador_soldado_id", "3");
         let token = "testtesttesttesttesttesttesttesttesttesttesttesttesttesttesttest";
         let req = Request::builder()
             .method("POST")
             .uri("/inventario")
-            .header(
-                "Cookie",
-                format!("operador_soldado_id=3; __Host-csrf={}", token),
-            )
+            .header("Cookie", format!("{}; __Host-csrf={}", cookie_str, token))
             .header("X-CSRF-Token", token)
             .header("Content-Type", "application/x-www-form-urlencoded")
             .body(Body::from(form_data))
@@ -258,19 +357,17 @@ mod tests_integracion {
     async fn test_post_inventario_autorizado_para_material_no_belico_incluso_tropa() {
         let nombre_test = "test_post_inv_no_belico";
         let state = configurar_db_pruebas(nombre_test).await;
-        let app = crear_app(state);
+        let app = crear_app(state.clone());
 
         // Intentamos agregar un "Uniforme" (categoria_id = 3, Equipo Táctico Individual, NO bélico) con operador_soldado_id = 3 (Cabo Infantería)
         let form_data = "codigo_inventario=TAC-999&nombre=Uniforme+Test&categoria_id=3&estado_conservacion=Operativo&stock_total=10";
 
+        let cookie_str = crear_cookie_encriptada(&state, "operador_soldado_id", "3");
         let token = "testtesttesttesttesttesttesttesttesttesttesttesttesttesttesttest";
         let req = Request::builder()
             .method("POST")
             .uri("/inventario")
-            .header(
-                "Cookie",
-                format!("operador_soldado_id=3; __Host-csrf={}", token),
-            )
+            .header("Cookie", format!("{}; __Host-csrf={}", cookie_str, token))
             .header("X-CSRF-Token", token)
             .header("Content-Type", "application/x-www-form-urlencoded")
             .body(Body::from(form_data))
@@ -285,19 +382,17 @@ mod tests_integracion {
     async fn test_post_inventario_autorizado_para_material_belico_si_es_oficial() {
         let nombre_test = "test_post_inv_belico_oficial";
         let state = configurar_db_pruebas(nombre_test).await;
-        let app = crear_app(state);
+        let app = crear_app(state.clone());
 
         // Intentamos agregar un Fusil (categoria_id = 1) con operador_soldado_id = 1 (Subteniente Santiago Mendoza, Oficial)
         let form_data = "codigo_inventario=ARM-888&nombre=Fusil+Oficial&categoria_id=1&estado_conservacion=Operativo&stock_total=5";
 
+        let cookie_str = crear_cookie_encriptada(&state, "operador_soldado_id", "1");
         let token = "testtesttesttesttesttesttesttesttesttesttesttesttesttesttesttest";
         let req = Request::builder()
             .method("POST")
             .uri("/inventario")
-            .header(
-                "Cookie",
-                format!("operador_soldado_id=1; __Host-csrf={}", token),
-            )
+            .header("Cookie", format!("{}; __Host-csrf={}", cookie_str, token))
             .header("X-CSRF-Token", token)
             .header("Content-Type", "application/x-www-form-urlencoded")
             .body(Body::from(form_data))
@@ -312,19 +407,17 @@ mod tests_integracion {
     async fn test_asignacion_material_belico_bloqueado_si_no_es_autorizante_valido() {
         let nombre_test = "test_asig_belico_bloqueado";
         let state = configurar_db_pruebas(nombre_test).await;
-        let app = crear_app(state);
+        let app = crear_app(state.clone());
 
         // Intentamos asignar un Fusil FX-05 (equipamiento_id = 1) con operador simulado Cabo (id = 3)
         let form_data = "soldado_id=1&equipamiento_id=1&cantidad=1";
 
+        let cookie_str = crear_cookie_encriptada(&state, "operador_soldado_id", "3");
         let token = "testtesttesttesttesttesttesttesttesttesttesttesttesttesttesttest";
         let req = Request::builder()
             .method("POST")
             .uri("/asignaciones")
-            .header(
-                "Cookie",
-                format!("operador_soldado_id=3; __Host-csrf={}", token),
-            )
+            .header("Cookie", format!("{}; __Host-csrf={}", cookie_str, token))
             .header("X-CSRF-Token", token)
             .header("Content-Type", "application/x-www-form-urlencoded")
             .body(Body::from(form_data))
@@ -343,14 +436,12 @@ mod tests_integracion {
         // Operador Oficial (id = 1), intenta devolver la asignación semilla id = 1 (2 fusiles del equipo 1)
         let form_data = "asignacion_id=1";
 
+        let cookie_str = crear_cookie_encriptada(&state, "operador_soldado_id", "1");
         let token = "testtesttesttesttesttesttesttesttesttesttesttesttesttesttesttest";
         let req = Request::builder()
             .method("POST")
             .uri("/asignaciones/devolver")
-            .header(
-                "Cookie",
-                format!("operador_soldado_id=1; __Host-csrf={}", token),
-            )
+            .header("Cookie", format!("{}; __Host-csrf={}", cookie_str, token))
             .header("X-CSRF-Token", token)
             .header("Content-Type", "application/x-www-form-urlencoded")
             .body(Body::from(form_data))
@@ -381,14 +472,12 @@ mod tests_integracion {
         // Operador Tropa (id = 3, Cabo Infantería), intenta devolver la asignación semilla id = 1
         let form_data = "asignacion_id=1";
 
+        let cookie_str = crear_cookie_encriptada(&state, "operador_soldado_id", "3");
         let token = "testtesttesttesttesttesttesttesttesttesttesttesttesttesttesttest";
         let req = Request::builder()
             .method("POST")
             .uri("/asignaciones/devolver")
-            .header(
-                "Cookie",
-                format!("operador_soldado_id=3; __Host-csrf={}", token),
-            )
+            .header("Cookie", format!("{}; __Host-csrf={}", cookie_str, token))
             .header("X-CSRF-Token", token)
             .header("Content-Type", "application/x-www-form-urlencoded")
             .body(Body::from(form_data))

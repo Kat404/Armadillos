@@ -2,7 +2,7 @@ use crate::AppState;
 use crate::domain::EstadoServicio;
 use crate::layouts::main_layout::{PageContext, layout};
 use crate::security::CsrfToken;
-use axum::{Extension, Form, extract::State};
+use axum::{Extension, Form, extract::State, response::IntoResponse};
 use maud::{Markup, html};
 use serde::Deserialize;
 
@@ -110,7 +110,7 @@ async fn obtener_soldados(state: &AppState) -> Result<Vec<Soldado>, String> {
     })?;
     let mut rows = conn
         .query(
-            "SELECT s.id, s.matricula, s.nombre, s.apellido_paterno, s.apellido_materno,
+            "SELECT s.id, s.matricula_encriptada, s.nombre_encriptado, s.apellido_paterno_encriptado, s.apellido_materno_encriptado,
                     r.nombre AS rango_nombre, sec.nombre AS seccion_nombre, s.estado
              FROM soldados s
              INNER JOIN rangos r ON s.rango_id = r.id
@@ -124,6 +124,8 @@ async fn obtener_soldados(state: &AppState) -> Result<Vec<Soldado>, String> {
             e.to_string()
         })?;
     let mut lista = Vec::new();
+    let ale_key = crate::crypto::obtener_ale_key();
+
     while let Some(row) = rows.next().await.map_err(|e| {
         tracing::error!(error = %e, "Fallo al iterar filas de soldados");
         e.to_string()
@@ -133,14 +135,43 @@ async fn obtener_soldados(state: &AppState) -> Result<Vec<Soldado>, String> {
             .parse::<EstadoServicio>()
             .map_err(|e| e.to_string())?;
 
-        // Obtener apellido_materno que puede ser NULL en la BD
-        let apellido_materno: Option<String> = row.get(4).ok();
+        // Obtener campos encriptados
+        let matricula_enc: String = row.get(1).map_err(|e| e.to_string())?;
+        let nombre_enc: String = row.get(2).map_err(|e| e.to_string())?;
+        let apellido_paterno_enc: String = row.get(3).map_err(|e| e.to_string())?;
+        let apellido_materno_enc: Option<String> = row.get(4).ok();
+
+        use secrecy::ExposeSecret;
+        let matricula = crate::crypto::desencriptar_pii(&matricula_enc, &ale_key)
+            .map_err(|e| format!("Fallo al descifrar matricula: {}", e))?
+            .expose_secret()
+            .to_string();
+
+        let nombre = crate::crypto::desencriptar_pii(&nombre_enc, &ale_key)
+            .map_err(|e| format!("Fallo al descifrar nombre: {}", e))?
+            .expose_secret()
+            .to_string();
+
+        let apellido_paterno = crate::crypto::desencriptar_pii(&apellido_paterno_enc, &ale_key)
+            .map_err(|e| format!("Fallo al descifrar apellido paterno: {}", e))?
+            .expose_secret()
+            .to_string();
+
+        let apellido_materno = match apellido_materno_enc {
+            Some(enc) if !enc.trim().is_empty() => Some(
+                crate::crypto::desencriptar_pii(&enc, &ale_key)
+                    .map_err(|e| format!("Fallo al descifrar apellido materno: {}", e))?
+                    .expose_secret()
+                    .to_string(),
+            ),
+            _ => None,
+        };
 
         lista.push(Soldado {
             id: row.get(0).map_err(|e| e.to_string())?,
-            matricula: row.get(1).map_err(|e| e.to_string())?,
-            nombre: row.get(2).map_err(|e| e.to_string())?,
-            apellido_paterno: row.get(3).map_err(|e| e.to_string())?,
+            matricula,
+            nombre,
+            apellido_paterno,
             apellido_materno,
             rango_nombre: row.get(5).map_err(|e| e.to_string())?,
             seccion_nombre: row.get(6).map_err(|e| e.to_string())?,
@@ -184,11 +215,17 @@ fn render_filas_soldados(soldados: &[Soldado]) -> Markup {
 pub async fn pagina_soldados(
     State(state): State<AppState>,
     Extension(csrf_token): Extension<CsrfToken>,
-) -> Markup {
+    jar: axum_extra::extract::PrivateCookieJar,
+) -> impl axum::response::IntoResponse {
+    use axum::response::Redirect;
     use tracing::Instrument;
 
+    if jar.get("operador_soldado_id").is_none() {
+        return Redirect::to("/login").into_response();
+    }
+
     let span = tracing::info_span!("pagina_soldados");
-    async {
+    let render_result = async {
         tracing::info!("Cargando panel de administración de soldados");
         let ctx = PageContext::new(
             "Armadillos - Personal Militar",
@@ -295,21 +332,30 @@ pub async fn pagina_soldados(
                 }
             },
         )
-    }
-    .instrument(span)
-    .await
+    };
+    render_result.instrument(span).await.into_response()
 }
 
 /// Handler POST: Incorpora un soldado y retorna las filas actualizadas.
 pub async fn agregar_soldado(
     State(state): State<AppState>,
+    jar: axum_extra::extract::PrivateCookieJar,
     Form(nuevo): Form<NuevoSoldado>,
-) -> Markup {
+) -> impl axum::response::IntoResponse {
+    use axum::http::StatusCode;
     use tracing::Instrument;
 
+    if jar.get("operador_soldado_id").is_none() {
+        return (StatusCode::UNAUTHORIZED, "Sesión no válida").into_response();
+    }
+
+    let ale_key = crate::crypto::obtener_ale_key();
+    let blind_index = crate::crypto::calcular_blind_index(&nuevo.matricula, &ale_key);
+
+    // VULN-04 Mitigado: Registramos únicamente el blind index en observabilidad, nunca la matrícula clara.
     let span = tracing::info_span!(
         "agregar_soldado",
-        matricula = %nuevo.matricula,
+        matricula_blind_index = %blind_index,
         rango_id = %nuevo.rango_id,
         estado = ?nuevo.estado
     );
@@ -318,22 +364,42 @@ pub async fn agregar_soldado(
         tracing::info!("Iniciando intento de enlistamiento de nuevo soldado");
         match state.db.connect() {
             Ok(conn) => {
-                // Utilizamos el apellido_materno como Option — si viene vacío del
-                // formulario HTML, lo tratamos como NULL en la BD.
                 let apellido_materno = nuevo
                     .apellido_materno
                     .as_deref()
                     .filter(|s| !s.trim().is_empty());
 
+                // Ciframos los datos en origen (ALE)
+                let matricula_enc = match crate::crypto::encriptar_pii(&nuevo.matricula, &ale_key) {
+                    Ok(enc) => enc,
+                    Err(e) => return Err(e),
+                };
+                let nombre_enc = match crate::crypto::encriptar_pii(&nuevo.nombre, &ale_key) {
+                    Ok(enc) => enc,
+                    Err(e) => return Err(e),
+                };
+                let apellido_paterno_enc = match crate::crypto::encriptar_pii(&nuevo.apellido_paterno, &ale_key) {
+                    Ok(enc) => enc,
+                    Err(e) => return Err(e),
+                };
+                let apellido_materno_enc = match apellido_materno {
+                    Some(ap) => match crate::crypto::encriptar_pii(ap, &ale_key) {
+                        Ok(enc) => Some(enc),
+                        Err(e) => return Err(e),
+                    },
+                    None => None,
+                };
+
                 match conn
                     .execute(
-                        "INSERT INTO soldados (matricula, nombre, apellido_paterno, apellido_materno, rango_id, seccion_servicio_id, estado)
-                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                        "INSERT INTO soldados (matricula_blind_index, matricula_encriptada, nombre_encriptado, apellido_paterno_encriptado, apellido_materno_encriptado, rango_id, seccion_servicio_id, estado)
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
                         (
-                            nuevo.matricula,
-                            nuevo.nombre,
-                            nuevo.apellido_paterno,
-                            apellido_materno.map(|s| s.to_string()),
+                            blind_index,
+                            matricula_enc,
+                            nombre_enc,
+                            apellido_paterno_enc,
+                            apellido_materno_enc,
                             nuevo.rango_id,
                             nuevo.seccion_servicio_id,
                             nuevo.estado.to_string(),
@@ -368,37 +434,7 @@ pub async fn agregar_soldado(
     }
 
     let soldados = obtener_soldados(&state).await.unwrap_or_default();
-    render_filas_soldados(&soldados)
-}
-
-/// Formulario para simular el operador actual en sesión.
-#[derive(Deserialize)]
-pub struct SimularOperador {
-    pub operador_id: i64,
-    pub redir_path: Option<String>,
-}
-
-/// Handler POST `/simular_operador`: Establece la cookie de simulación del operador actual.
-pub async fn simular_operador(
-    Form(payload): Form<SimularOperador>,
-) -> impl axum::response::IntoResponse {
-    use axum::http::{HeaderMap, header};
-    use axum::response::Redirect;
-
-    let mut headers = HeaderMap::new();
-    let cookie = format!(
-        "operador_soldado_id={}; Path=/; SameSite=Strict; HttpOnly",
-        payload.operador_id
-    );
-    headers.insert(
-        header::SET_COOKIE,
-        axum::http::HeaderValue::from_str(&cookie).unwrap(),
-    );
-
-    let redirect_url = payload
-        .redir_path
-        .unwrap_or_else(|| "/soldados".to_string());
-    (headers, Redirect::to(&redirect_url))
+    render_filas_soldados(&soldados).into_response()
 }
 
 /// Estructura que consolida los datos legibles y el contexto de seguridad del operador simulado.
@@ -413,35 +449,25 @@ pub struct DatosOperador {
 /// Resuelve el operador militar activo leyendo la cookie e interrogando la base de datos.
 /// Si no hay cookie, utiliza el primer soldado registrado en el sistema como fallback por defecto.
 pub async fn resolver_operador_activo(
-    headers: &axum::http::HeaderMap,
+    jar: &axum_extra::extract::PrivateCookieJar,
     state: &crate::AppState,
 ) -> Result<Option<DatosOperador>, String> {
     use crate::domain::{ContextoAcceso, Rango};
-    use crate::security::extraer_cookie;
 
-    let operador_id_opt = extraer_cookie(headers, "operador_soldado_id")
-        .and_then(|id_str| id_str.parse::<i64>().ok());
+    let operador_id_opt = jar
+        .get("operador_soldado_id")
+        .and_then(|cookie| cookie.value().parse::<i64>().ok());
 
     let conn = state.db.connect().map_err(|e| e.to_string())?;
 
     let operador_id = match operador_id_opt {
         Some(id) => id,
-        None => {
-            let mut rows = conn
-                .query("SELECT id FROM soldados ORDER BY id ASC LIMIT 1", ())
-                .await
-                .map_err(|e| e.to_string())?;
-            if let Some(row) = rows.next().await.map_err(|e| e.to_string())? {
-                row.get(0).map_err(|e| e.to_string())?
-            } else {
-                return Ok(None);
-            }
-        }
+        None => return Ok(None),
     };
 
     let mut rows = conn
         .query(
-            "SELECT s.id, s.nombre, s.apellido_paterno, s.rango_id, sec.nombre, sec.es_servicio_belico, r.nombre
+            "SELECT s.id, s.nombre_encriptado, s.apellido_paterno_encriptado, s.rango_id, sec.nombre, sec.es_servicio_belico, r.nombre
              FROM soldados s
              JOIN secciones_servicios sec ON s.seccion_servicio_id = sec.id
              JOIN rangos r ON s.rango_id = r.id
@@ -453,8 +479,8 @@ pub async fn resolver_operador_activo(
 
     if let Some(row) = rows.next().await.map_err(|e| e.to_string())? {
         let id: i64 = row.get(0).map_err(|e| e.to_string())?;
-        let nombre: String = row.get(1).map_err(|e| e.to_string())?;
-        let apellido: String = row.get(2).map_err(|e| e.to_string())?;
+        let nombre_enc: String = row.get(1).map_err(|e| e.to_string())?;
+        let apellido_enc: String = row.get(2).map_err(|e| e.to_string())?;
         let rango_id: i64 = row.get(3).map_err(|e| e.to_string())?;
         let seccion_nombre: String = row.get(4).map_err(|e| e.to_string())?;
         let es_servicio_belico_num: i64 = row.get(5).map_err(|e| e.to_string())?;
@@ -462,6 +488,17 @@ pub async fn resolver_operador_activo(
 
         let es_servicio_belico = es_servicio_belico_num != 0;
         let rango = Rango::from_id(rango_id)?;
+
+        let ale_key = crate::crypto::obtener_ale_key();
+        use secrecy::ExposeSecret;
+        let nombre = crate::crypto::desencriptar_pii(&nombre_enc, &ale_key)
+            .map_err(|e| format!("Error descifrando nombre del operador: {}", e))?
+            .expose_secret()
+            .to_string();
+        let apellido = crate::crypto::desencriptar_pii(&apellido_enc, &ale_key)
+            .map_err(|e| format!("Error descifrando apellido del operador: {}", e))?
+            .expose_secret()
+            .to_string();
 
         Ok(Some(DatosOperador {
             id,
