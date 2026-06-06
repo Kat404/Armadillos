@@ -21,10 +21,13 @@ Nuestra aplicación se basa en cuatro pilares fundamentales del ecosistema de Ru
 
 Para empezar, sigue este orden recomendado:
 
-1.  [**Conceptos Core (Tokio vs Axum vs Tower)**](core_concepts.md): Entiende la jerarquía de tu servidor.
-2.  [**Rutas y Handlers**](routing_and_handlers.md): Cómo definir URLs y qué datos recibir de ellas.
-3.  [**Templating con Maud**](templating_with_maud.md): Cómo integrar HTML en Rust sin perder el tipado.
-4.  [**Roadmap del Proyecto**](project_roadmap.md): Un paso a paso sugerido para construir tu aplicación.
+1. [**Conceptos Core (Tokio vs Axum vs Tower)**](core_concepts.md): Entiende la jerarquía de tu servidor.
+2. [**Rutas y Handlers**](routing_and_handlers.md): Cómo definir URLs y qué datos recibir de ellas.
+3. [**Templating con Maud**](templating_with_maud.md): Cómo integrar HTML en Rust sin perder el tipado.
+4. [**Base de Datos TursoDB**](tursodb.md): Esquema 3FN, cifrado Aegis256 y gestión de conexiones.
+5. [**Seguridad y Criptografía**](seguridad_y_criptografia.md): ALE, índices ciegos, hash-chains y login seguro.
+6. [**Respaldos Cifrados con Nushell**](respaldos.md): Respaldos consistentes y cifrado asimétrico usando `age`.
+7. [**Roadmap del Proyecto**](project_roadmap.md): El mapa de fases del desarrollo militar de Armadillos.
 
 ---
 

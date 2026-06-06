@@ -1,125 +1,137 @@
-# Guía de Desarrollo: Integración de Turso DB (Local-First)
+# 🗄️ Guía de Desarrollo: Integración de Turso DB (Local-First & Cifrado)
 
-Esta guía documenta los aprendizajes, decisiones de arquitectura y la implementación técnica del motor de base de datos local Turso DB (antes Limbo) en el proyecto Armadillos.
+Esta guía documenta los aprendizajes, las decisiones de arquitectura y la implementación técnica del motor de base de datos local Turso DB (libsql) y el esquema de almacenamiento relacional cifrado en el proyecto **Armadillos**.
 
-## Contexto y Decisiones de Arquitectura
+---
 
-Durante la fase experimental del proyecto, decidimos implementar Turso DB en su modalidad local-first. Esta decisión se tomó evaluando los siguientes aspectos:
+## 1. Contexto y Decisiones de Arquitectura
 
-- **Seguridad en Memoria (Rust-Native):** A diferencia de SQLite tradicional, que está escrito en C y requiere llamadas inseguras FFI (`unsafe`), el nuevo motor de Turso está escrito enteramente en Rust.
+Durante la fase de desarrollo del proyecto, decidimos implementar Turso DB en su modalidad local-first y cifrada. Esta decisión se tomó evaluando los siguientes aspectos:
+
+- **Seguridad en Memoria (Rust-Native):** A diferencia de SQLite tradicional, que está escrito en C y requiere enlaces FFI (`unsafe`), el nuevo motor de Turso está escrito enteramente en Rust.
 - **Asincronía Nativa:** Soporta `async/await` de forma nativa sin bloquear el hilo principal de ejecución de Tokio, lo que evita delegar tareas a pools de bloqueo externos.
+- **Cifrado de Base de Datos TursoDB:** Configuramos el cifrado de página nativo en reposo de Turso (`Aegis256`) utilizando la clave maestra simétrica del sistema.
 - **Privacidad Absoluta:** No se utilizan las características de sincronización en la nube (Turso Cloud), confinando la base de datos exclusivamente al archivo local `armadillos.db` en el disco.
 
 ---
 
-## Estructura de la Base de Datos (Esquema 3FN)
+## 2. Estructura de la Base de Datos (Esquema 3FN Normalizado)
 
-El esquema se inicializa automáticamente al arrancar la aplicación mediante el módulo `src/db/database.rs`, que ejecuta todas las sentencias DDL y datos semilla como una transacción atómica vía `execute_batch`. Las tablas están diseñadas en **Tercera Forma Normal (3FN)** para eliminar redundancias y dependencias transitivas.
+El esquema se inicializa automáticamente al arrancar la aplicación mediante el módulo `src/db/database.rs`, el cual ejecuta todas las sentencias DDL y datos semilla como una transacción atómica explícita (`BEGIN TRANSACTION` y `COMMIT`).
 
-### Tablas de Lookup (Catálogos)
+Las tablas están diseñadas en **Tercera Forma Normal (3FN)** para eliminar redundancias y dependencias transitivas.
 
-#### rangos
+```mermaid
+erDiagram
+    RANGOS ||--o{ SOLDADOS : "id a rango_id"
+    SECCIONES_SERVICIOS ||--o{ SOLDADOS : "id a seccion_servicio_id"
+    SOLDADOS ||--o| CREDENCIALES_SOLDADOS : "id a soldado_id"
+    SOLDADOS ||--o{ ASIGNACIONES_EQUIPAMIENTO : "id a soldado_id"
+    SOLDADOS ||--o{ ASIGNACIONES_EQUIPAMIENTO : "id a autorizado_por_soldado_id"
+    CATEGORIAS_EQUIPAMIENTO ||--o{ EQUIPAMIENTO : "id a categoria_id"
+    EQUIPAMIENTO ||--o{ ASIGNACIONES_EQUIPAMIENTO : "id a equipamiento_id"
+    ASIGNACIONES_EQUIPAMIENTO ||--o{ ASIGNACIONES_EQUIPAMIENTO : "id a asignacion_origen_id"
+```
+
+---
+
+## 3. Catálogos y Tablas de Lookup
+
+### Tabla: `rangos`
 
 Catálogo oficial de rangos militares mexicanos (SEDENA/SEMAR).
 
-| Campo              | Tipo    | Restricción               | Descripción                                                     |
-| :----------------- | :------ | :------------------------ | :-------------------------------------------------------------- |
-| `id`               | INTEGER | PRIMARY KEY AUTOINCREMENT | Identificador único                                             |
-| `nombre`           | TEXT    | NOT NULL UNIQUE           | Nombre del rango (ej: "Coronel")                                |
-| `categoria`        | TEXT    | NOT NULL                  | Categoría orgánica (Tropa, Clases, Oficiales, Jefes, Generales) |
-| `orden_jerarquico` | INTEGER | NOT NULL UNIQUE           | Nivel numérico para comparaciones de acceso ABAC                |
+| Campo | Tipo | Restricción | Descripción |
+| :--- | :--- | :--- | :--- |
+| `id` | INTEGER | PRIMARY KEY AUTOINCREMENT | Identificador único del rango |
+| `nombre` | TEXT | NOT NULL UNIQUE | Nombre oficial (ej: "Subteniente") |
+| `categoria` | TEXT | NOT NULL | Categoría SEDENA (Tropa, Clases, Oficiales, Jefes, Generales) |
+| `orden_jerarquico` | INTEGER | NOT NULL UNIQUE | Nivel numérico de menor a mayor (1-15) para validación ABAC |
 
-#### secciones_servicios
+### Tabla: `secciones_servicios`
 
-Catálogo de secciones/servicios orgánicos de un plantel militar.
+Catálogo de secciones u órganos militares de un plantel.
 
-| Campo                | Tipo    | Restricción               | Descripción                                                             |
-| :------------------- | :------ | :------------------------ | :---------------------------------------------------------------------- |
-| `id`                 | INTEGER | PRIMARY KEY AUTOINCREMENT | Identificador único                                                     |
-| `nombre`             | TEXT    | NOT NULL UNIQUE           | Nombre de la sección (ej: "Materiales de Guerra")                       |
-| `es_servicio_belico` | INTEGER | NOT NULL DEFAULT 0        | Flag ABAC: 1 si el personal de clases tiene acceso al inventario bélico |
+| Campo | Tipo | Restricción | Descripción |
+| :--- | :--- | :--- | :--- |
+| `id` | INTEGER | PRIMARY KEY AUTOINCREMENT | Identificador único del servicio |
+| `nombre` | TEXT | NOT NULL UNIQUE | Nombre de la sección (ej: "Materiales de Guerra") |
+| `es_servicio_belico` | INTEGER | NOT NULL DEFAULT 0 | Flag ABAC: 1 si tiene privilegios para material de guerra |
 
-#### categorias_equipamiento
+### Tabla: `categorias_equipamiento`
 
-Clasificación de tipos de equipamiento con flag de control de acceso.
+Clasificación de tipos de equipamiento para aplicar controles de acceso.
 
-| Campo                   | Tipo    | Restricción               | Descripción                                            |
-| :---------------------- | :------ | :------------------------ | :----------------------------------------------------- |
-| `id`                    | INTEGER | PRIMARY KEY AUTOINCREMENT | Identificador único                                    |
-| `nombre`                | TEXT    | NOT NULL UNIQUE           | Nombre de la categoría (ej: "Armamento", "Municiones") |
-| `es_material_de_guerra` | INTEGER | NOT NULL DEFAULT 0        | Flag: 1 si requiere permisos ABAC para CRUD            |
-
-### Tablas Operativas
-
-#### soldados
-
-Registro de personal militar con claves foráneas a las tablas de lookup.
-
-| Campo                 | Tipo    | Restricción                           | Descripción                                     |
-| :-------------------- | :------ | :------------------------------------ | :---------------------------------------------- |
-| `id`                  | INTEGER | PRIMARY KEY AUTOINCREMENT             | Identificador único interno                     |
-| `matricula`           | TEXT    | NOT NULL UNIQUE                       | Clave natural de negocio (matrícula militar)    |
-| `nombre`              | TEXT    | NOT NULL                              | Nombre(s) de pila                               |
-| `apellido_paterno`    | TEXT    | NOT NULL                              | Apellido paterno                                |
-| `apellido_materno`    | TEXT    | (nullable)                            | Apellido materno (opcional)                     |
-| `rango_id`            | INTEGER | NOT NULL FK → rangos(id)              | Referencia al rango asignado                    |
-| `seccion_servicio_id` | INTEGER | NOT NULL FK → secciones_servicios(id) | Referencia a la sección de servicio             |
-| `estado`              | TEXT    | NOT NULL DEFAULT 'Activo'             | Estado de servicio (Activo, Licencia, Retirado) |
-
-#### equipamiento
-
-Inventario físico del plantel con código de inventario único.
-
-| Campo                 | Tipo    | Restricción                               | Descripción                                   |
-| :-------------------- | :------ | :---------------------------------------- | :-------------------------------------------- |
-| `id`                  | INTEGER | PRIMARY KEY AUTOINCREMENT                 | Identificador único                           |
-| `codigo_inventario`   | TEXT    | NOT NULL UNIQUE                           | Código de trazabilidad física (ej: "ARM-001") |
-| `nombre`              | TEXT    | NOT NULL                                  | Nombre del ítem                               |
-| `descripcion`         | TEXT    | (nullable)                                | Descripción técnica del equipo                |
-| `categoria_id`        | INTEGER | NOT NULL FK → categorias_equipamiento(id) | Referencia a la categoría                     |
-| `estado_conservacion` | TEXT    | NOT NULL DEFAULT 'Operativo'              | Estado físico del equipo                      |
-| `stock_total`         | INTEGER | NOT NULL DEFAULT 0                        | Cantidad total en inventario                  |
-| `stock_disponible`    | INTEGER | NOT NULL DEFAULT 0                        | Cantidad disponible (no asignada)             |
-
-#### asignaciones_equipamiento
-
-Cadena de custodia: registro de quién recibió qué equipo y quién lo autorizó.
-
-| Campo                       | Tipo    | Restricción                      | Descripción                           |
-| :-------------------------- | :------ | :------------------------------- | :------------------------------------ |
-| `id`                        | INTEGER | PRIMARY KEY AUTOINCREMENT        | Identificador único                   |
-| `soldado_id`                | INTEGER | NOT NULL FK → soldados(id)       | Soldado que recibe el equipo          |
-| `equipamiento_id`           | INTEGER | NOT NULL FK → equipamiento(id)   | Equipo asignado                       |
-| `cantidad`                  | INTEGER | NOT NULL DEFAULT 1               | Cantidad asignada                     |
-| `fecha_asignacion`          | TEXT    | NOT NULL DEFAULT datetime('now') | Timestamp de la asignación            |
-| `fecha_devolucion`          | TEXT    | (nullable)                       | NULL mientras el equipo esté asignado |
-| `autorizado_por_soldado_id` | INTEGER | NOT NULL FK → soldados(id)       | Soldado que autorizó la entrega       |
+| Campo | Tipo | Restricción | Descripción |
+| :--- | :--- | :--- | :--- |
+| `id` | INTEGER | PRIMARY KEY AUTOINCREMENT | Identificador único |
+| `nombre` | TEXT | NOT NULL UNIQUE | Nombre de la categoría (ej: "Armamento", "Municiones") |
+| `es_material_de_guerra` | INTEGER | NOT NULL DEFAULT 0 | Flag ABAC: 1 si requiere permisos bélicos para su control |
 
 ---
 
-## Flujo de Trabajo con Maud y HTMX
+## 4. Tablas Operativas y de Control
 
-La interfaz implementa un patrón Hypermedia centrado en el servidor. El flujo de datos opera de la siguiente manera:
+### Tabla: `soldados`
 
-1. **Carga Inicial (`GET`):** El cliente solicita `/soldiers`. El handler lee los soldados de la base de datos y renderiza la página completa combinando el layout y las filas.
-2. **Interactividad Asíncrona (`POST`):**
-   - El formulario en el cliente intercepta el envío mediante el atributo `hx-post="/soldiers"`.
-   - Axum procesa el registro e inserta el elemento en la base de datos de Turso.
-   - El servidor responde únicamente con el fragmento HTML correspondiente a las filas actualizadas (`<tr>`).
-   - HTMX inserta esta respuesta directamente en el contenedor del navegador (`tbody`) sin recargar la página.
+Contiene la información del personal militar. Nombres y matrícula se guardan cifrados (ALE) para evitar fugas de información.
+
+| Campo | Tipo | Restricción | Descripción |
+| :--- | :--- | :--- | :--- |
+| `id` | INTEGER | PRIMARY KEY AUTOINCREMENT | Identificador único del soldado |
+| `matricula_blind_index` | TEXT | NOT NULL UNIQUE | Hash Keyed BLAKE3 de la matrícula para búsquedas directas |
+| `matricula_encriptada` | TEXT | NOT NULL | Matrícula cifrada con ChaCha20-Poly1305 |
+| `nombre_encriptado` | TEXT | NOT NULL | Nombre de pila cifrado con ChaCha20-Poly1305 |
+| `apellido_paterno_encriptado` | TEXT | NOT NULL | Apellido paterno cifrado con ChaCha20-Poly1305 |
+| `apellido_materno_encriptado` | TEXT | (nullable) | Apellido materno cifrado (opcional) |
+| `rango_id` | INTEGER | NOT NULL FK → `rangos(id)` | Identificador del rango del militar |
+| `seccion_servicio_id` | INTEGER | NOT NULL FK → `secciones_servicios(id)` | Identificador de la sección asignada |
+| `estado` | TEXT | NOT NULL DEFAULT 'Activo' | Estado (Activo, Licencia, Retirado) |
+
+### Tabla: `credenciales_soldados`
+
+Almacena la información de autenticación segura para el inicio de sesión.
+
+| Campo | Tipo | Restricción | Descripción |
+| :--- | :--- | :--- | :--- |
+| `soldado_id` | INTEGER | PRIMARY KEY FK → `soldados(id)` | Vinculación 1:1 con el soldado (ON DELETE CASCADE) |
+| `usuario` | TEXT | NOT NULL UNIQUE | Nombre de usuario para el inicio de sesión |
+| `password_hash` | TEXT | NOT NULL | Contraseña cifrada con Argon2id |
+
+### Tabla: `equipamiento`
+
+Inventario físico del plantel.
+
+| Campo | Tipo | Restricción | Descripción |
+| :--- | :--- | :--- | :--- |
+| `id` | INTEGER | PRIMARY KEY AUTOINCREMENT | Identificador único del material |
+| `codigo_inventario` | TEXT | NOT NULL UNIQUE | Código de control interno (ej: "ARM-001") |
+| `nombre` | TEXT | NOT NULL | Nombre descriptivo del material |
+| `descripcion` | TEXT | (nullable) | Detalles del material |
+| `categoria_id` | INTEGER | NOT NULL FK → `categorias_equipamiento(id)` | Categoría asignada |
+| `estado_conservacion` | TEXT | NOT NULL DEFAULT 'Operativo' | Estado físico (Operativo, EnMantenimiento, DeBaja) |
+| `stock_total` | INTEGER | NOT NULL DEFAULT 0 | Inventario total asignado al plantel |
+| `stock_disponible` | INTEGER | NOT NULL DEFAULT 0 | Inventario libre en armería (no asignado) |
+
+### Tabla: `asignaciones_equipamiento`
+
+Bitácora inmutable en forma de libro mayor (Ledger) con encadenamiento criptográfico. **Solo admite operaciones `INSERT`**.
+
+| Campo | Tipo | Restricción | Descripción |
+| :--- | :--- | :--- | :--- |
+| `id` | INTEGER | PRIMARY KEY AUTOINCREMENT | Identificador del evento |
+| `tipo_evento` | TEXT | NOT NULL | Tipo de transacción: `ASIGNACION` o `DEVOLUCION` |
+| `soldado_id` | INTEGER | NOT NULL FK → `soldados(id)` | Soldado receptor o emisor del equipo |
+| `equipamiento_id` | INTEGER | NOT NULL FK → `equipamiento(id)` | Material entregado o retornado |
+| `cantidad` | INTEGER | NOT NULL DEFAULT 1 | Cantidad entregada o devuelta |
+| `fecha_evento` | TEXT | NOT NULL DEFAULT datetime('now') | Timestamp UTC de la operación |
+| `autorizado_por_soldado_id` | INTEGER | NOT NULL FK → `soldados(id)` | Oficial u operador que autoriza el evento |
+| `asignacion_origen_id` | INTEGER | FK → `asignaciones_equipamiento(id)` | Enlace a la asignación de origen si es `DEVOLUCION` |
+| `hash_verificacion` | TEXT | NOT NULL | Hash BLAKE3 del bloque actual encadenado al anterior |
 
 ---
 
-## Buenas Prácticas y Aprendizajes Técnicos
-
-### Errores Comunes de Sintaxis SQL
-
-Al interactuar con bases de datos relacionales en crudo, es crucial validar que las sentencias de definición y manipulación no posean errores que provoquen pánicos (`panic!`) en el arranque de la aplicación:
-
-- **Creación de esquemas:** La sintaxis correcta es `CREATE TABLE IF NOT EXISTS` (evitando errores comunes como `IF NO EXISTS`).
-- **Inserción de datos:** La palabra clave correcta es `VALUES` en plural al realizar operaciones de inserción, no `VALUE`.
-
-### Compartir Conexiones en Axum
+## 5. Compartir Conexiones en Axum
 
 El objeto de base de datos (`turso::Database`) representa el archivo en el disco y es seguro para ser compartido entre múltiples hilos de ejecución (`Send + Sync`).
 

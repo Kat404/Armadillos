@@ -45,12 +45,13 @@ En Maud, un componente es una función pura que retorna un tipo `Markup`.
 
 Los layouts son funciones envoltorio que estructuran páginas completas, inyectando dependencias (CSS, scripts) y metadatos compartidos.
 
-### Flujo de Creación
+### Flujo de Creación de Layouts
 
 1. **Directorio:** Usa la carpeta `src/layouts/`.
 2. **Archivo:** Crea el layout, ej. `src/layouts/AdminLayout.rs`.
 3. **Módulo:** Exponlo en `src/layouts/mod.rs` (`pub mod AdminLayout;`).
 4. **Contexto y Función:** Recibe el contexto necesario y el contenido interno (`Markup`).
+
    ```rust
    pub fn layout(ctx: &PageContext, contenido: Markup) -> Markup {
        html! {

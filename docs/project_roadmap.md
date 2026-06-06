@@ -1,55 +1,46 @@
-# 🚀 Roadmap: Construyendo Armadillos paso a paso
+# 🚀 Roadmap del Proyecto: Armadillos
 
-Si te sientes abrumado, sigue este camino. Está diseñado para que vayas de menos a más, asegurando que cada pieza funcione antes de pasar a la siguiente.
-
-## Fase 1: El Esqueleto (Base)
-
-1.  `[x]` **Limpieza del `main.rs`**: Deja solo la configuración del servidor y una ruta de prueba.
-2.  `[x]` **Configuración de Logs**: Asegúrate de que `tracing` esté funcionando para ver quién entra a tu web en la terminal.
-3.  `[x]` **Archivos Estáticos**: Crea una carpeta `assets/` y configura Axum para servir tu `style.css`. ¡Pruébalo entrando a `localhost:3000/assets/style.css`!
-
-## Fase 2: La Piel (UI con Maud)
-
-1.  `[x]` **Crear el Layout**: Define la función `layout` en un nuevo archivo (ej: `src/views.rs`). Debe incluir el CSS y una estructura HTML básica.
-2.  `[x]` **Página de Inicio**: Transforma tu `home_handler` para que devuelva un `Markup` de Maud usando el layout.
-3.  `[x]` **Componentes**: Crea pequeñas funciones que devuelvan `Markup` para partes repetitivas (botones, tarjetas, menús).
-
-## Fase 3: Los Nervios (Enrutamiento y Datos)
-
-1.  `[x]` **Rutas Dinámicas**: Crea una página que reciba un nombre por la URL (ej: `/hola/jose`) y lo muestre usando Maud.
-2.  `[x]` **Manejo de Formularios**: Crea una página con un `<form>`, recíbelo en Axum y procesa los datos.
-3.  `[x]` **Estado Compartido**: Aprende a usar `State` para pasar datos entre rutas sin usar globales (ej: un contador de visitas).
-
-## Fase 4: El Cerebro (Lógica de Negocio)
-
-1.  `[x]` **Base de Datos (Opcional)**: Integra una base de datos sencilla (como SQLite con `sqlx`).
-2.  `[ ]` **Módulos**: Organiza tu código. No dejes todo en `main.rs`. Separa en `routes.rs`, `views.rs` y `models.rs`.
+El desarrollo del proyecto **Armadillos** se ha planeado en 7 fases estratégicas con el fin de construir una aplicación militar escalable, privada y robusta basada en Rust, TursoDB y Maud.
 
 ---
 
-## 🛠️ Herramientas de Diagnóstico
+## Fases de Desarrollo
 
-Como usuario de **Arch Linux** y **Nushell**, tienes herramientas poderosas:
+### 🏗️ Fase 1: Cimientos y Seguridad Estática (100% Completada)
 
-```nu
-# Monitorear cambios y recompilar automáticamente (Instala: cargo install cargo-watch)
-cargo watch -x run
+- Configuración de arquitectura limpia, lints estrictos en `clippy` e integración de licencias **AGPLv3**.
+- Definición y gestión de secretos y llaves simétricas a través de variables de entorno seguras.
 
-# Ver peticiones HTTP en tiempo real con curl
-curl -v localhost:3000
+### 🧠 Fase 2: Corazón del Dominio (100% Completada)
 
-# Analizar dependencias y su tamaño
-cargo tree
-```
+- Modelado de tipos y jerarquías militares seguras mediante máquinas de estados en Rust (`domain::Rango`, `domain::EstadoServicio`).
+- Diseño e implementación de la política de Control de Acceso Basado en Atributos (ABAC) para evaluar roles de personal.
 
----
+### 🎨 Fase 3: Interfaz Maud + HTMX y Middleware (100% Completada)
 
-## 🏁 Meta Final
+- Renderizado HTML rápido y tipado con **Maud** y navegación asíncrona fluida con **HTMX**.
+- Creación de componentes reutilizables y mitigación de XSS/Clickjacking mediante middlewares HTTP y tokens CSRF.
 
-Un servidor web escrito en Rust que sea:
+### 💾 Fase 4: Persistencia y Cifrado de BD (100% Completada)
 
-- **Rápido:** Gracias a Tokio y Maud.
-- **Seguro:** Gracias al sistema de tipos de Rust.
-- **Mantenible:** Gracias a la arquitectura modular de Axum y Tower.
+- Integración de Turso DB en modalidad local-first (`armadillos.db`).
+- Configuración de cifrado de página simétrico en reposo (`Aegis256`) y backups cifrados asimétricos usando **`age`** y **Nushell**.
 
-¡Tú puedes, futuro ingeniero! 🐾🦀
+### 📊 Fase 5: Observabilidad y Auditoría (80% Completada)
+
+- Registro estructurado asíncrono con `tracing-subscriber` en formato JSON.
+- Hardening de red en producción e instrumentación de trazabilidad de flujo de solicitudes.
+
+### 📦 Fase 6: Inventario Militar y Normalización (100% Completada)
+
+- Normalización del esquema de base de datos a la **Tercera Forma Normal (3FN)** con 6 tablas.
+- Integración del catálogo de rangos SEDENA oficiales e inventario de material bélico.
+- Implementación de flujos de asignación y devoluciones en caliente de armería.
+
+### 🛡️ Fase 7: Mitigaciones de Seguridad y V1 (100% Completada)
+
+- Portal de autenticación real con cifrado **Argon2id**.
+- Manejo de sesiones en el servidor mediante cookies firmadas y cifradas (`PrivateCookieJar`).
+- Encriptación a nivel de aplicación (ALE) para PII con **ChaCha20-Poly1305** y **Búsquedas Ciegas (Blind Index)** con BLAKE3.
+- Bitácora inmutable con encadenamiento criptográfico (**Hash-Chain**) para no-repudio.
+- Sanitización de eventos de observabilidad (logs libres de PII).

@@ -49,9 +49,9 @@ Axum puede devolver muchas cosas:
 
 ## 🛠️ Buenas Prácticas
 
-1.  **Mantén los handlers limpios:** Un handler solo debe recibir la petición y llamar a la lógica de negocio en otro módulo. No pongas 500 líneas de código dentro de un handler.
-2.  **Usa Estados:** Si necesitas una conexión a la base de datos, no uses variables globales. Usa el extractor `State`.
-3.  **Aprovecha el Sistema de Tipos:** Si un parámetro debe ser un número positivo, usa `u64` en el `Path`. Axum devolverá un error `400 Bad Request` automáticamente si alguien envía letras.
+1. **Mantén los handlers limpios:** Un handler solo debe recibir la petición y llamar a la lógica de negocio en otro módulo. No pongas 500 líneas de código dentro de un handler.
+2. **Usa Estados:** Si necesitas una conexión a la base de datos, no uses variables globales. Usa el extractor `State`.
+3. **Aprovecha el Sistema de Tipos:** Si un parámetro debe ser un número positivo, usa `u64` en el `Path`. Axum devolverá un error `400 Bad Request` automáticamente si alguien envía letras.
 
 ---
 
